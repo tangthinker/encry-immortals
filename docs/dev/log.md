@@ -71,3 +71,30 @@ export GOFLAGS=-mod=mod
 
 - 新增 ADR-008（测试用低开销 KDF 参数只走内部构造函数，CLI 与 vault.meta 仍强制硬下限）。
 - 待用户确认：Q1 依赖策略、Q2 二进制名、Q3 里程碑顺序（已按推荐值执行）。
+---
+
+## 2026-10-17 · M2 线格式 ✅
+
+**Plan**
+
+- 按 03/04 章实现：canonical MessagePack（D-10）、Slice Envelope v1、PackHeader/Footer、Journal body v3 + Journal 密文容器。
+- 目标：golden GV-1/GV-2、解析器防御清单逐条单测、fuzz 目标。
+
+**Do**
+
+- `internal/wire/mpack`：最短整数/str/bin/array 编码；解码器**拒绝**非规范表示（ADR-012）。
+- `internal/wire/envelope.go`：50 B 信封、54 B AAD、解密前 OOM 上界检查；`SealSliceWithNonce` 仅供 golden/测试。
+- `internal/wire/pack.go`：32 B PackHeader（随机 pack_id + 随机 padding）、footer 加解密、`LocateFooter` 三步定位（拒绝被截断的尾巴）。
+- `internal/wire/journal.go`：7 元/8 元数组 schema、6 种 op、MKDIR/RMDIR/SYMLINK/META、checkpoint tree；解码期结构校验（index 连续、pack_idx 在界、size↔slices 一致、路径规则、mode 无类型位）；Journal 密文容器（28 B 头 + zstd + AEAD，seq/vault_id 入 AAD）。
+- `tools/goldengen` 增加 GV-1/GV-2；`internal/wire/{envelope,pack,journal,golden}_test.go`；3 个 fuzz 目标。
+
+**Check（实际输出）**
+
+- `go test ./internal/wire/...` → `ok internal/wire 0.330s`、`ok internal/wire/mpack`。
+- fuzz（每目标 15 s）：FuzzSliceEnvelope 6,780,527 execs、FuzzJournalDecode 7,972,639 execs、FuzzOpenJournalFile 541,905 execs → 全部 PASS，无 panic。
+- 负向用例（实测通过）：切片 AAD 七要素任一被改（offset/index/packID/txnID/codec/ver_alg/长度）→ 解密失败；journal 重编号 seq+1 → 解密失败；trailing 字节 → 拒绝；`..`/绝对路径/空段/类型位 mode → 解码拒绝。
+
+**Act**
+
+- 新增 ADR-011（64 MiB 线格式硬上限 vs 32 MiB 策略默认）、ADR-012（拒绝非规范 msgpack）、ADR-013（路径校验分两层）。
+- 遗留：`maxCompressedLen` 与 zstd worst-case 的实际对照留待 M8 的性能/边界复核。

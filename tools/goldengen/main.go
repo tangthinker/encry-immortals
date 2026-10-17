@@ -17,7 +17,9 @@ import (
 	"path/filepath"
 
 	"github.com/tangthinker/encry-immortals/internal/armor"
+	"github.com/tangthinker/encry-immortals/internal/codec"
 	vaultcrypto "github.com/tangthinker/encry-immortals/internal/crypto"
+	"github.com/tangthinker/encry-immortals/internal/wire"
 )
 
 func main() {
@@ -28,6 +30,8 @@ func main() {
 		fail(err)
 	}
 	write(filepath.Join(*out, "gv5_subkeys.json"), gv5())
+	write(filepath.Join(*out, "gv1_slice.json"), gv1())
+	write(filepath.Join(*out, "gv2_journal.json"), gv2())
 	write(filepath.Join(*out, "gv3_verifier.json"), gv3())
 	write(filepath.Join(*out, "gv4_armor.json"), gv4())
 	fmt.Println("golden vectors written to", *out)
@@ -48,6 +52,89 @@ func write(path string, v any) {
 		fail(err)
 	}
 	fmt.Println("wrote", path)
+}
+
+// gv1 freezes a slice envelope for a fixed key, nonce and AAD inputs. The
+// payload is stored with codec=none on purpose so that the vector stays stable
+// across zstd versions; compression is covered by GV-2 (journal file).
+func gv1() any {
+	key := sha256.Sum256([]byte("apex-golden-storage-key-v1"))
+	packID := idBytes()
+	txnID := seqBytes(0x40, 16)
+	nonce := seqBytes(0x60, 24)
+	plain := []byte("apex golden slice payload")
+	env, err := wire.SealSliceWithNonce(key[:], codec.None, len(plain), plain, packID, 32, 0, txnID, nonce)
+	if err != nil {
+		fail(err)
+	}
+	return map[string]any{
+		"key_hex":      hex.EncodeToString(key[:]),
+		"pack_id_hex":  hex.EncodeToString(packID),
+		"txn_id_hex":   hex.EncodeToString(txnID),
+		"nonce_hex":    hex.EncodeToString(nonce),
+		"offset":       32,
+		"index":        0,
+		"codec":        codec.None,
+		"plain_hex":    hex.EncodeToString(plain),
+		"envelope_hex": hex.EncodeToString(env),
+	}
+}
+
+// gv2 freezes a journal body (msgpack) and its encrypted container.
+func gv2() any {
+	key := sha256.Sum256([]byte("apex-golden-journal-key-v1"))
+	vaultID := idBytes()
+	const seq = uint64(7)
+	nonce := seqBytes(0x80, 24)
+	prev := sha256.Sum256([]byte("apex-golden-prev-journal"))
+	j := &wire.Journal{
+		FormatVersion: wire.JournalFormatVersion,
+		Seq:           seq,
+		TxnID:         [16]byte{0xa0, 0xa1, 0xa2},
+		TSUnix:        1773000000,
+		Msg:           "golden vector",
+		PrevHash:      prev,
+		Flags:         wire.JournalFlagFinal,
+		Kind:          wire.KindCommit,
+		Params: wire.VaultParams{
+			SlicePlainBytes: 32 << 20,
+			SmallFileBytes:  64 << 20,
+			PackMaxBytes:    128 << 20,
+			SessionMaxMiB:   256,
+		},
+		Packs: []wire.PackRef{{
+			Name:       "data/2026-10/pack_1773000000123_a1b2c3.dat",
+			Size:       4096,
+			SHA256:     sha256.Sum256([]byte("golden pack")),
+			SliceCount: 1,
+		}},
+		Dirs: []wire.DirEntry{{Path: "photos", Mode: 0o755, ModTimeNS: 1773000000000000000}},
+		Ops: []wire.Op{{
+			Type: wire.OpAdd, Path: "photos/a.jpg", Mode: 0o644, Size: 1024,
+			ModTimeNS:     1773000000000000000,
+			ContentSHA256: sha256.Sum256([]byte("golden file")),
+			Slices: []wire.SliceRef{{
+				PackIdx: 0, Offset: 32, EnvLen: 1074, PlainLen: 1024, Index: 0,
+				Codec: codec.Zstd, PlainSHA256: sha256.Sum256([]byte("golden slice")),
+			}},
+		}},
+	}
+	body, err := wire.EncodeJournalBody(j)
+	if err != nil {
+		fail(err)
+	}
+	file, err := wire.SealJournalFileWithNonce(key[:], seq, vaultID, body, nonce)
+	if err != nil {
+		fail(err)
+	}
+	return map[string]any{
+		"key_hex":      hex.EncodeToString(key[:]),
+		"vault_id_hex": hex.EncodeToString(vaultID),
+		"seq":          seq,
+		"nonce_hex":    hex.EncodeToString(nonce),
+		"body_hex":     hex.EncodeToString(body),
+		"file_hex":     hex.EncodeToString(file),
+	}
 }
 
 // gv5 freezes the four HKDF child keys for a fixed MasterKey + vault_id.
