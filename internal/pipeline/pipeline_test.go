@@ -422,3 +422,44 @@ func keysOf(m map[string]treeEntry) []string {
 	}
 	return out
 }
+
+// TestCompressionLevelAffectsPackSize proves the configured zstd level actually
+// reaches the pack writer (before this, codec.zstd_level was ignored).
+func TestCompressionLevelAffectsPackSize(t *testing.T) {
+	// Real-ish text (the spec documents) so that level 19 has something to win.
+	var corpus bytes.Buffer
+	for i := 0; i < 3; i++ {
+		matches, err := filepath.Glob("../../docs/spec/*.md")
+		if err != nil || len(matches) == 0 {
+			t.Skip("spec documents not available")
+		}
+		for _, m := range matches {
+			raw, err := os.ReadFile(m)
+			if err != nil {
+				t.Fatal(err)
+			}
+			corpus.Write(raw)
+		}
+	}
+	data := corpus.Bytes()
+	run := func(level int) (packBytes, plainBytes uint64) {
+		e := newEnv(t)
+		e.cfg.Codec.ZstdLevel = level
+		e.cfg.Codec.MinCompressBytes = 1
+		e.cfg.Storage.SlicePlainBytes = 8 << 20
+		e.cfg.Storage.SmallFileBytes = 8 << 20
+		e.cfg.Storage.PackMaxBytes = 16 << 20
+		writeFile(t, filepath.Join(e.source, "text.md"), data, 0o644)
+		res := e.backup(t, false)
+		return res.PackBytes, res.PlainBytes
+	}
+	lowPack, lowPlain := run(1)
+	highPack, highPlain := run(19)
+	if lowPlain != highPlain || lowPlain == 0 {
+		t.Fatalf("plain bytes differ: %d vs %d", lowPlain, highPlain)
+	}
+	if highPack >= lowPack {
+		t.Fatalf("level 19 (%d bytes) should be smaller than level 1 (%d bytes)", highPack, lowPack)
+	}
+	t.Logf("plain=%d level1=%d level19=%d (saved %d bytes)", lowPlain, lowPack, highPack, lowPack-highPack)
+}

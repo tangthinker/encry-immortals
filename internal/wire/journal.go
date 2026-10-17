@@ -750,25 +750,36 @@ const (
 	JournalFileMinSize = JournalFileHeaderSize + vaultcrypto.TagLen
 )
 
-// SealJournalFile compresses, encrypts and frames a journal body.
+// SealJournalFile compresses, encrypts and frames a journal body with the
+// default codec options.
 func SealJournalFile(journalKey []byte, seq uint64, vaultID, body []byte) ([]byte, error) {
+	return SealJournalFileWithOptions(journalKey, seq, vaultID, body, codec.DefaultOptions())
+}
+
+// SealJournalFileWithOptions is SealJournalFile with tunable compression.
+func SealJournalFileWithOptions(journalKey []byte, seq uint64, vaultID, body []byte, opts codec.Options) ([]byte, error) {
 	nonce, err := vaultcrypto.RandomNonce()
 	if err != nil {
 		return nil, err
 	}
-	return SealJournalFileWithNonce(journalKey, seq, vaultID, body, nonce)
+	return sealJournalFile(journalKey, seq, vaultID, body, nonce, opts)
 }
 
 // SealJournalFileWithNonce is SealJournalFile with a caller-supplied nonce; only
 // golden vectors and tests may use it (I18).
 func SealJournalFileWithNonce(journalKey []byte, seq uint64, vaultID, body, nonce []byte) ([]byte, error) {
+	return sealJournalFile(journalKey, seq, vaultID, body, nonce, codec.DefaultOptions())
+}
+
+// sealJournalFile is the shared implementation.
+func sealJournalFile(journalKey []byte, seq uint64, vaultID, body, nonce []byte, opts codec.Options) ([]byte, error) {
 	if len(body) > MaxJournalPlainBytes {
 		return nil, fmt.Errorf("wire: journal body %d bytes exceeds the %d cap", len(body), MaxJournalPlainBytes)
 	}
 	if len(nonce) != vaultcrypto.NonceLen {
 		return nil, fmt.Errorf("wire: nonce must be %d bytes", vaultcrypto.NonceLen)
 	}
-	codecID, payload, err := codec.Compress(body)
+	codecID, payload, err := codec.CompressWith(body, opts)
 	if err != nil {
 		return nil, err
 	}

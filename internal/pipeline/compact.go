@@ -184,7 +184,7 @@ func Compact(opts CompactOptions) (*CompactResult, error) {
 	}
 	dropped := map[string]bool{}
 	for _, n := range files {
-		newSlices, derr := repackFile(oldReader, pw, chain.Tree.Packs, n)
+		newSlices, derr := repackFile(oldReader, pw, chain.Tree.Packs, n, opts.Config.CodecOptions())
 		if derr != nil {
 			if apexerr.CodeOf(derr) == apexerr.CodeIncomplete && opts.AcceptDataLoss {
 				res.Dropped = append(res.Dropped, n.Path)
@@ -234,7 +234,7 @@ func Compact(opts CompactOptions) (*CompactResult, error) {
 	if err != nil {
 		return nil, apexerr.From(err)
 	}
-	raw, err := wire.SealJournalFile(outKeys.Sub.Journal.Bytes(), 1, outKeys.VaultID[:], plain)
+	raw, err := wire.SealJournalFileWithOptions(outKeys.Sub.Journal.Bytes(), 1, outKeys.VaultID[:], plain, opts.Config.CodecOptions())
 	if err != nil {
 		return nil, apexerr.From(err)
 	}
@@ -277,7 +277,7 @@ func Compact(opts CompactOptions) (*CompactResult, error) {
 }
 
 // repackFile copies one file's verified plaintext into the new packs.
-func repackFile(reader *store.PackReader, pw *store.PackWriter, packs map[string]wire.PackRef, n *journal.Node) ([]wire.SliceRef, error) {
+func repackFile(reader *store.PackReader, pw *store.PackWriter, packs map[string]wire.PackRef, n *journal.Node, opts codec.Options) ([]wire.SliceRef, error) {
 	if len(n.Slices) == 0 {
 		return nil, nil
 	}
@@ -299,7 +299,7 @@ func repackFile(reader *store.PackReader, pw *store.PackWriter, packs map[string
 		if err != nil {
 			return nil, err
 		}
-		codecID, payload, cerr := codec.Compress(plain)
+		codecID, payload, cerr := codec.CompressWith(plain, opts)
 		if cerr != nil {
 			return nil, apexerr.Wrapf(cerr, apexerr.CodeInternal, "压缩失败：%s", n.Path)
 		}

@@ -159,3 +159,15 @@
   3. `prepareDest` 允许目标目录非空——前提是存在 seq 匹配的进度文件（即这是同一快照的中断续解）。
 - **代价**：掉电后可能出现"文件名已在、内容半截"的文件；重跑 `restore` 会自动修复（依赖第 2 条）。备份侧的 pack/journal 仍然强制 fsync（5.1 不可妥协）。
 - **备选**：保留逐文件 fsync（吞吐不达标）；或加 `--fast-restore` 开关（多一个用户要理解的旋钮，且默认行为仍要选一个）。
+## ADR-021 压缩参数可调 + 关闭 zstd 帧 CRC
+
+- **背景**：10.3 的 `[codec] zstd_level` / `min_compress_bytes` 之前**没有接线**——`internal/codec` 把 level 5 与 4096 B 写死，改配置没有任何效果。同时 zstd 默认会在每个帧里放 4 字节 CRC。
+- **决策**：
+  1. `codec.Options{Level, MinBytes, ProbeBytes, ProbeRatio}` + 按 level 缓存 encoder（`sync.Map`），`CompressWith` 为唯一入口；`config.CodecOptions()` 把配置文件映射进来。
+  2. pipeline（backup / note / compact）与 journal 封包全部使用配置里的级别；`wire.SealJournalFileWithOptions` 新增，旧的 `SealJournalFile` 仍用默认参数。
+  3. **关闭 zstd 帧 CRC**（`zstd.WithEncoderCRC(false)`）：切片完整性已由 Poly1305 与 `plain_sha256` 覆盖，帧 CRC 只是重复校验；journal 同理。
+  4. 默认级别仍是 5（spec 3.4），不擅自提高。
+  5. 解码窗口下界修正：zstd 要求窗口 ≥1 KiB，之前当 `maxLen < 1024`（用户把 `min_compress_bytes` 调小后可能出现）会直接解码失败。
+- **代价**：GV-2 的密文字节发生变化 → 重新生成并把"用固定 nonce 重新封包必须逐字节一致"写进测试，防止未来静默漂移。GV-1/3/4/5 不受影响。
+- **实测**（同一份 359,472 B 的 spec 文本，单切片）：level 1 → 58,464 B，level 19 → 49,697 B（省 15%）。`go test -bench BenchmarkCompressLevels` 给出各档吞吐。
+- **备选**：默认改 9（收益 5–15%，但 spec 写死 5，且会拖慢大库首备）；保留帧 CRC（每个切片多 4 B + 一次 CRC 计算，收益为零）。

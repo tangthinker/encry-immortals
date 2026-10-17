@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/tangthinker/encry-immortals/internal/apexerr"
+	"github.com/tangthinker/encry-immortals/internal/codec"
 	vaultcrypto "github.com/tangthinker/encry-immortals/internal/crypto"
 	"github.com/tangthinker/encry-immortals/internal/journal"
 	"github.com/tangthinker/encry-immortals/internal/store"
@@ -18,6 +19,7 @@ type NoteOptions struct {
 	Keys    *vault.Keys
 	Params  wire.VaultParams
 	Message string
+	Codec   codec.Options
 	Now     func() time.Time
 }
 
@@ -67,7 +69,7 @@ func WriteNote(opts NoteOptions) (uint64, [32]byte, error) {
 	if err != nil {
 		return 0, zero, apexerr.From(err)
 	}
-	raw, err := wire.SealJournalFile(opts.Keys.Sub.Journal.Bytes(), seq, opts.Keys.VaultID[:], body)
+	raw, err := wire.SealJournalFileWithOptions(opts.Keys.Sub.Journal.Bytes(), seq, opts.Keys.VaultID[:], body, opts.Codec)
 	if err != nil {
 		return 0, zero, apexerr.From(err)
 	}

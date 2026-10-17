@@ -12,6 +12,7 @@ import (
 	"github.com/pelletier/go-toml/v2"
 
 	"github.com/tangthinker/encry-immortals/internal/apexerr"
+	"github.com/tangthinker/encry-immortals/internal/codec"
 	"github.com/tangthinker/encry-immortals/internal/wire"
 )
 
@@ -102,7 +103,7 @@ func Default() *Config {
 			SmallFileBytes:  DefaultSmallFileBytes,
 			SessionMaxMiB:   DefaultSessionMaxMiB,
 		},
-		Codec: CodecConfig{ZstdLevel: 5, MinCompressBytes: 4096},
+		Codec: CodecConfig{ZstdLevel: codec.DefaultLevel, MinCompressBytes: codec.DefaultMinBytes},
 		Scan: ScanConfig{
 			Mode:            "fast",
 			Exclude:         []string{".git/**", "node_modules/**", "*.tmp", ".DS_Store"},
@@ -221,6 +222,14 @@ func (c *Config) Validate() error {
 	default:
 		return apexerr.Newf(apexerr.CodeUsage, "scan.follow_hardlinks=%q 非法（error|split）", c.Scan.FollowHardlinks)
 	}
+	if c.Codec.ZstdLevel < codec.MinLevel || c.Codec.ZstdLevel > codec.MaxLevel {
+		return apexerr.Newf(apexerr.CodeUsage,
+			"codec.zstd_level=%d 非法（%d..%d，越大越慢）", c.Codec.ZstdLevel, codec.MinLevel, codec.MaxLevel)
+	}
+	if c.Codec.MinCompressBytes < 0 || c.Codec.MinCompressBytes > 1<<20 {
+		return apexerr.Newf(apexerr.CodeUsage,
+			"codec.min_compress_bytes=%d 非法（0..1048576）", c.Codec.MinCompressBytes)
+	}
 	if c.Workers.PackWriters < 1 {
 		return apexerr.New(apexerr.CodeUsage, "concurrency.pack_writers 必须 >= 1")
 	}
@@ -228,6 +237,14 @@ func (c *Config) Validate() error {
 		return apexerr.New(apexerr.CodeUsage, "storage.session_max_mib 必须 > 0")
 	}
 	return nil
+}
+
+// CodecOptions maps the config onto the codec tunables.
+func (c *Config) CodecOptions() codec.Options {
+	o := codec.DefaultOptions()
+	o.Level = c.Codec.ZstdLevel
+	o.MinBytes = c.Codec.MinCompressBytes
+	return o
 }
 
 // Params returns the journal parameter snapshot for this config.

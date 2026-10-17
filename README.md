@@ -33,6 +33,10 @@ cat > ~/.config/apex/config.toml <<'EOF'
 [storage]
 target_dir = "/Users/me/QuarkDrive/apex"
 
+[codec]
+zstd_level = 5            # 1..22：文本多可调到 9，压缩更小但更慢
+min_compress_bytes = 4096 # 小于该值的切片不压缩
+
 [scan]
 exclude = [".git/**", "node_modules/**", "*.tmp", ".DS_Store"]
 EOF
@@ -90,6 +94,22 @@ apex --password-file /run/secrets/apex backup --source /data --json
 4. **单写者**：同一 TargetDir 只允许一个 apex 进程/主机写入（flock + `.apex.lock` + 严格 seq）。
 5. **不支持项 fail-fast**：硬链接、xattr/ACL（`com.apple.*`、`security.*` 等）、设备文件/FIFO/socket、非法 UTF-8 路径、超长路径、大小写折叠冲突都会直接报错（退出码 21）。xattr 可用 `scan.ignore_xattr = true` 显式降级；macOS 的 ACL 与资源分叉不在 xattr 接口内，属于已知缺口。
 6. **不看网盘状态**：程序无法感知同步是否完成；跨机恢复用 `verify --size` 确认 pack 齐了再 restore。
+
+## 压缩
+
+所有内容在**加密之前**压缩（zstd），每个切片独立压缩，因此随机读取不需要解压整包。压缩参数可调：
+
+| 级别 | 相对速度 | 相对体积 | 适用 |
+|---|---|---|---|
+| 1–3 | 最快 | 较大 | 追速度的日常增量 |
+| **5（默认）** | 快 | 中 | 规格默认值 |
+| 9 | 中 | 小 5–15% | 文档 / 源码为主 |
+| 19 | 慢（约 1/10 吞吐） | 最小 | 只写一次的长期归档 |
+
+- 已压缩数据（JPEG / MP4 / ZIP / 密文）会被 64 KiB 采样探测识别，直接以 `codec=none` 存储，不浪费 CPU。
+- 日志（journal）同样压缩；zstd 帧 CRC 已关闭——每个切片已有 Poly1305 与 `plain_sha256`，重复校验只增加字节与 CPU。
+- `apex backup` 会打印 `明文 → 落盘（比例）`，`--json` 中为 `plain_bytes` / `pack_bytes`。
+- 临时覆盖：`apex backup --zstd-level 9`、`apex compact --zstd-level 19`。
 
 ## 性能（本机实测，128 MiB 不可压缩数据）
 

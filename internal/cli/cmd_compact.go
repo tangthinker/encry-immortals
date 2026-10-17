@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/tangthinker/encry-immortals/internal/apexerr"
+	"github.com/tangthinker/encry-immortals/internal/codec"
 	"github.com/tangthinker/encry-immortals/internal/pipeline"
 )
 
@@ -18,6 +19,7 @@ func cmdCompact(a *App, g *globalFlags, args []string) error {
 	newVault := fs.String("new-vault", "", "--new-identity 时的新控制平面目录")
 	dryRun := fs.Bool("dry-run", false, "只报告不写盘")
 	acceptLoss := fs.Bool("accept-data-loss", false, "允许跳过 pack 缺失的文件（会在结果中列出）")
+	zstdLevel := fs.Int("zstd-level", 0, "压缩级别 1..22（0 = 使用 config 的 codec.zstd_level）")
 	if err := parseInterspersed(fs, args); err != nil {
 		return apexerr.Wrap(err, apexerr.CodeUsage, "参数错误")
 	}
@@ -32,6 +34,12 @@ func cmdCompact(a *App, g *globalFlags, args []string) error {
 	defer s.Close()
 	if err := requireTarget(s.cfg); err != nil {
 		return err
+	}
+	if *zstdLevel != 0 {
+		if *zstdLevel < codec.MinLevel || *zstdLevel > codec.MaxLevel {
+			return apexerr.Newf(apexerr.CodeUsage, "--zstd-level=%d 非法（%d..%d）", *zstdLevel, codec.MinLevel, codec.MaxLevel)
+		}
+		s.cfg.Codec.ZstdLevel = *zstdLevel
 	}
 	layout, err := newLayout(s.cfg)
 	if err != nil {

@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/tangthinker/encry-immortals/internal/apexerr"
+	"github.com/tangthinker/encry-immortals/internal/codec"
 	"github.com/tangthinker/encry-immortals/internal/pipeline"
 	"github.com/tangthinker/encry-immortals/internal/wire"
 )
@@ -21,6 +22,7 @@ func cmdBackup(a *App, g *globalFlags, args []string) error {
 	strict := fs.Bool("strict", false, "全量内容 hash 比对，不依赖 mtime")
 	dryRun := fs.Bool("dry-run", false, "只报告将发生的变更，不落盘")
 	breakLock := fs.Bool("break-lock", false, "删除 TargetDir/.apex.lock（确认对方已失效时使用）")
+	zstdLevel := fs.Int("zstd-level", 0, "压缩级别 1..22（0 = 使用 config 的 codec.zstd_level）")
 	var excludes stringList
 	fs.Var(&excludes, "exclude", "额外排除规则（可重复，如 --exclude '*.log'）")
 	if err := fs.Parse(args); err != nil {
@@ -37,6 +39,12 @@ func cmdBackup(a *App, g *globalFlags, args []string) error {
 	defer s.Close()
 	if err := requireTarget(s.cfg); err != nil {
 		return err
+	}
+	if *zstdLevel != 0 {
+		if *zstdLevel < codec.MinLevel || *zstdLevel > codec.MaxLevel {
+			return apexerr.Newf(apexerr.CodeUsage, "--zstd-level=%d 非法（%d..%d）", *zstdLevel, codec.MinLevel, codec.MaxLevel)
+		}
+		s.cfg.Codec.ZstdLevel = *zstdLevel
 	}
 	if len(excludes) > 0 {
 		s.cfg.Scan.Exclude = append(append([]string{}, s.cfg.Scan.Exclude...), excludes...)
@@ -71,6 +79,7 @@ func cmdBackup(a *App, g *globalFlags, args []string) error {
 		Meta         int    `json:"meta"`
 		Dirs         int    `json:"dirs"`
 		Links        int    `json:"links"`
+		PlainBytes   uint64 `json:"plain_bytes"`
 		PackBytes    uint64 `json:"pack_bytes"`
 		JournalBytes int    `json:"journal_bytes"`
 		Truncated    bool   `json:"truncated"`
@@ -80,7 +89,7 @@ func cmdBackup(a *App, g *globalFlags, args []string) error {
 		Seq: res.Seq, Changed: res.Changed, DryRun: *dryRun,
 		Added: res.Stats.Added, Modified: res.Stats.Modified, Deleted: res.Stats.Deleted,
 		Meta: res.Stats.Meta, Dirs: res.Stats.Dirs, Links: res.Stats.Links,
-		PackBytes: res.PackBytes, JournalBytes: res.JournalBytes,
+		PlainBytes: res.PlainBytes, PackBytes: res.PackBytes, JournalBytes: res.JournalBytes,
 		Truncated: res.Truncated, Skipped: res.Skipped,
 	}
 	return s.printJSONOrHuman(doc, func() {
@@ -99,9 +108,16 @@ func cmdBackup(a *App, g *globalFlags, args []string) error {
 			fmt.Fprintf(s.stdout, "预计 %d 个 pack，%s\n", res.EstimatedPacks, humanBytes(int64(res.EstimatedBytes)))
 			return
 		}
-		fmt.Fprintf(s.stdout, "%d 个 pack · %s · journal %s · 用时 %s\n",
-			len(res.Packs), humanBytes(int64(res.PackBytes)), humanBytes(int64(res.JournalBytes)),
-			res.Duration.Round(time.Millisecond))
+		if res.PlainBytes > 0 {
+			ratio := 100 * float64(res.PackBytes) / float64(res.PlainBytes)
+			fmt.Fprintf(s.stdout, "%d 个 pack · 明文 %s → 落盘 %s（%.0f%%）· journal %s · 用时 %s\n",
+				len(res.Packs), humanBytes(int64(res.PlainBytes)), humanBytes(int64(res.PackBytes)),
+				ratio, humanBytes(int64(res.JournalBytes)), res.Duration.Round(time.Millisecond))
+		} else {
+			fmt.Fprintf(s.stdout, "%d 个 pack · %s · journal %s · 用时 %s\n",
+				len(res.Packs), humanBytes(int64(res.PackBytes)), humanBytes(int64(res.JournalBytes)),
+				res.Duration.Round(time.Millisecond))
+		}
 		if res.Truncated {
 			fmt.Fprintln(s.stderr, "提示：本次达到 session_max_mib 上限，剩余改动会在下次备份处理。")
 		}
@@ -135,6 +151,7 @@ func cmdNote(a *App, g *globalFlags, args []string) error {
 		Keys:    s.keys,
 		Params:  s.cfg.Params(),
 		Message: message,
+		Codec:   s.cfg.CodecOptions(),
 		Now:     time.Now,
 	})
 	if err != nil {

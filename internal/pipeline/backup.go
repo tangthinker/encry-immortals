@@ -49,6 +49,7 @@ type BackupResult struct {
 	Changed        bool
 	Stats          Stats
 	Packs          []wire.PackRef
+	PlainBytes     uint64
 	PackBytes      uint64
 	JournalBytes   int
 	StagingSwept   int
@@ -63,6 +64,7 @@ type BackupResult struct {
 type backupRun struct {
 	opts      BackupOptions
 	cfg       *config.Config
+	codecOpts codec.Options
 	now       func() time.Time
 	progress  func(format string, args ...any)
 	sourceDir string
@@ -86,6 +88,7 @@ func Backup(opts BackupOptions) (*BackupResult, error) {
 	}
 	res := &BackupResult{}
 	start := now()
+	run.codecOpts = run.cfg.CodecOptions()
 
 	// S0: preflight ----------------------------------------------------------
 	if err := opts.Layout.Ensure(); err != nil {
@@ -211,6 +214,7 @@ func Backup(opts BackupOptions) (*BackupResult, error) {
 		op.ContentSHA256 = sum
 		kept = append(kept, op)
 		written += op.Size
+		res.PlainBytes += op.Size
 	}
 	diff.Ops = kept
 	if len(diff.Ops) == 0 {
@@ -374,7 +378,7 @@ func (r *backupRun) writeFileOnce(pw *store.PackWriter, e scan.Entry) ([]wire.Sl
 		if n > 0 {
 			chunk := buf[:n]
 			h.Write(chunk)
-			codecID, payload, cerr := codec.Compress(chunk)
+			codecID, payload, cerr := codec.CompressWith(chunk, r.codecOpts)
 			if cerr != nil {
 				return nil, zero, apexerr.Wrapf(cerr, apexerr.CodeInternal, "压缩失败：%s", e.Path)
 			}
@@ -457,7 +461,7 @@ func (r *backupRun) commitJournal(chain *journal.Chain, diff *Diff, packs []wire
 		if err != nil {
 			return 0, zero, 0, apexerr.From(err)
 		}
-		raw, err := wire.SealJournalFile(r.opts.Keys.Sub.Journal.Bytes(), j.Seq, r.opts.Keys.VaultID[:], body)
+		raw, err := wire.SealJournalFileWithOptions(r.opts.Keys.Sub.Journal.Bytes(), j.Seq, r.opts.Keys.VaultID[:], body, r.codecOpts)
 		if err != nil {
 			return 0, zero, 0, apexerr.From(err)
 		}

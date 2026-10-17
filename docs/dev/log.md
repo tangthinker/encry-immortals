@@ -397,3 +397,27 @@ E13 pack 不存在：…（约 3 秒后返回，符合预期）
 
 - 同步在 README 的开发章节注明。
 - 说明：本地已验证这些命令（gofmt/vet/test/crash/golden/交叉编译/2 min fuzz），但 GitHub Actions 本身在当前环境无法执行，属于**未实跑**项。
+---
+
+## 2026-10-17 · 压缩：参数接线 + 关闭冗余 CRC + 可视化
+
+**问题**：规格 10.3 提供了 `[codec] zstd_level` / `min_compress_bytes`，但实现里 `internal/codec` 把 level 5、4096 B 写死——**改配置没有任何效果**。
+
+**Do**
+
+- `codec.Options`（Level / MinBytes / ProbeBytes / ProbeRatio）+ 按级别缓存的 encoder 池；`CompressWith` 成为唯一入口，旧的 `Compress` 保持默认参数。
+- `config.CodecOptions()` 接线；校验 `zstd_level ∈ [1,22]`、`min_compress_bytes ∈ [0,1 MiB]`。
+- pipeline（backup / note / compact）与 journal 封包全部使用配置级别；新增 `wire.SealJournalFileWithOptions`。
+- **关闭 zstd 帧 CRC**：每个切片已有 Poly1305 + `plain_sha256`，帧 CRC 是重复校验。
+- 修复潜在缺陷：zstd 解码窗口要求 ≥1 KiB，之前 `maxLen < 1024` 会解码失败（把 `min_compress_bytes` 调小后即可触发）。
+- CLI：`backup/compact --zstd-level N`；`backup` 输出 `明文 → 落盘（比例）`，JSON 增加 `plain_bytes`。
+- GV-2 重新生成：body 扩到 300 个 op（38,780 B）→ journal 文件 21,490 B，codec=zstd；并新增"固定 nonce 重新封包必须逐字节等于 golden"的断言，从此压缩参数漂移会被 CI 抓住。
+
+**Check（实际输出）**
+
+- `go test ./internal/pipeline -run TestCompressionLevelAffectsPackSize -v` →
+  `plain=359472 level1=58464 level19=49697 (saved 8767 bytes)`（同一切片，level 19 省 15%）。
+- `go test ./internal/cli -run TestCLIZstdLevel -v` → 非法级别退出码 2；`--zstd-level 9` 生效，JSON 含 `plain_bytes/pack_bytes`。
+- `go test ./internal/codec -bench BenchmarkCompressLevels` →
+  level1 7,087 MB/s · level3 8,486 MB/s · level5 4,839 MB/s · level9 8,889 MB/s · level19 681 MB/s（1 MiB 高重复度内存样本，仅作相对参考）。
+- `go test ./...` 16 包全绿。

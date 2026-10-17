@@ -107,4 +107,13 @@ func TestGoldenJournalFile(t *testing.T) {
 	if !bytes.Equal(reencoded, body) {
 		t.Fatal("GV-2 body encoding drifted")
 	}
+	// Re-sealing with the recorded nonce must reproduce the frozen file bytes:
+	// this pins the zstd frame options (level, CRC) and the AEAD layer.
+	resealed, err := SealJournalFileWithNonce(key, gv.Seq, vaultID, body, mustHex(t, gv.NonceHex))
+	if err != nil {
+		t.Fatalf("GV-2 re-seal: %v", err)
+	}
+	if !bytes.Equal(resealed, file) {
+		t.Fatalf("GV-2 file bytes drifted (compression or AEAD options changed)")
+	}
 }

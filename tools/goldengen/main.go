@@ -109,15 +109,7 @@ func gv2() any {
 			SliceCount: 1,
 		}},
 		Dirs: []wire.DirEntry{{Path: "photos", Mode: 0o755, ModTimeNS: 1773000000000000000}},
-		Ops: []wire.Op{{
-			Type: wire.OpAdd, Path: "photos/a.jpg", Mode: 0o644, Size: 1024,
-			ModTimeNS:     1773000000000000000,
-			ContentSHA256: sha256.Sum256([]byte("golden file")),
-			Slices: []wire.SliceRef{{
-				PackIdx: 0, Offset: 32, EnvLen: 1074, PlainLen: 1024, Index: 0,
-				Codec: codec.Zstd, PlainSHA256: sha256.Sum256([]byte("golden slice")),
-			}},
-		}},
+		Ops:  gv2Ops(),
 	}
 	body, err := wire.EncodeJournalBody(j)
 	if err != nil {
@@ -135,6 +127,25 @@ func gv2() any {
 		"body_hex":     hex.EncodeToString(body),
 		"file_hex":     hex.EncodeToString(file),
 	}
+}
+
+// gv2Ops keeps the journal body above codec.MinBytes so that GV-2 also pins the
+// zstd frame options (level, CRC) and not just the MessagePack layer.
+func gv2Ops() []wire.Op {
+	ops := make([]wire.Op, 0, 300)
+	for i := 0; i < 300; i++ {
+		path := fmt.Sprintf("photos/2026-03/img%04d.jpg", i)
+		ops = append(ops, wire.Op{
+			Type: wire.OpAdd, Path: path, Mode: 0o644, Size: 1024,
+			ModTimeNS:     1773000000000000000,
+			ContentSHA256: sha256.Sum256([]byte(path)),
+			Slices: []wire.SliceRef{{
+				PackIdx: 0, Offset: uint64(32 + i*1074), EnvLen: 1074, PlainLen: 1024, Index: 0,
+				Codec: codec.Zstd, PlainSHA256: sha256.Sum256([]byte(path + "/slice")),
+			}},
+		})
+	}
+	return ops
 }
 
 // gv5 freezes the four HKDF child keys for a fixed MasterKey + vault_id.

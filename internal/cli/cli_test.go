@@ -62,6 +62,7 @@ func newCLIEnv(t *testing.T) *cliEnv {
 		"slice_plain_bytes = 65536\n" +
 		"small_file_bytes = 131072\n" +
 		"pack_max_bytes = 1048576\n\n" +
+		"[codec]\nzstd_level = 5\nmin_compress_bytes = 1\n\n" +
 		"[scan]\nexclude = []\n"
 	if err := os.WriteFile(env.cfgPath, []byte(cfg), 0o600); err != nil {
 		t.Fatal(err)
@@ -447,5 +448,32 @@ func TestCLIStatusChainAndWaitForPacks(t *testing.T) {
 	}
 	if elapsed < time.Second {
 		t.Fatalf("--wait-for-packs returned after %s, expected >= 1s", elapsed)
+	}
+}
+func TestCLIZstdLevel(t *testing.T) {
+	env := newCLIEnv(t)
+	env.writeSource(t)
+	if _, _, code := env.run(t, "backup", "--source", env.source, "--zstd-level", "99"); code != apexerr.ExitUsage {
+		t.Fatalf("invalid level exit = %d, want %d", code, apexerr.ExitUsage)
+	}
+	if err := os.WriteFile(filepath.Join(env.source, "compressible.txt"), bytes.Repeat([]byte("compressible line of text. "), 6000), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	out, errOut, code := env.run(t, "backup", "--source", env.source, "--zstd-level", "9", "--json")
+	if code != 0 {
+		t.Fatalf("backup --zstd-level 9 exit = %d: %s", code, errOut)
+	}
+	var doc struct {
+		PlainBytes uint64 `json:"plain_bytes"`
+		PackBytes  uint64 `json:"pack_bytes"`
+	}
+	if err := json.Unmarshal([]byte(out), &doc); err != nil {
+		t.Fatalf("backup --json invalid: %v", err)
+	}
+	if doc.PlainBytes == 0 || doc.PackBytes == 0 {
+		t.Fatalf("compression statistics missing: %+v", doc)
+	}
+	if doc.PackBytes > doc.PlainBytes {
+		t.Fatalf("stored %d bytes for %d bytes of plaintext", doc.PackBytes, doc.PlainBytes)
 	}
 }
