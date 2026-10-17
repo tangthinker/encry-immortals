@@ -147,6 +147,7 @@ func Backup(opts BackupOptions) (*BackupResult, error) {
 		Excludes:             run.cfg.Scan.Exclude,
 		FollowHardlinks:      run.cfg.Scan.FollowHardlinks == "split",
 		SparseMaxBytes:       run.cfg.Scan.SparseMaxBytes,
+		IgnoreXattr:          run.cfg.Scan.IgnoreXattr,
 		AllowExternalSymlink: false,
 	})
 	if err != nil {

@@ -12,7 +12,9 @@ import (
 	"github.com/tangthinker/encry-immortals/internal/apexerr"
 	"github.com/tangthinker/encry-immortals/internal/armor"
 	"github.com/tangthinker/encry-immortals/internal/config"
+	vaultcrypto "github.com/tangthinker/encry-immortals/internal/crypto"
 	"github.com/tangthinker/encry-immortals/internal/index"
+	"github.com/tangthinker/encry-immortals/internal/journal"
 	"github.com/tangthinker/encry-immortals/internal/lock"
 	"github.com/tangthinker/encry-immortals/internal/store"
 	"github.com/tangthinker/encry-immortals/internal/vault"
@@ -203,6 +205,7 @@ func cmdStatus(a *App, g *globalFlags, args []string) error {
 	fs := flag.NewFlagSet("status", flag.ContinueOnError)
 	fs.SetOutput(a.Stderr)
 	clearUnverified := fs.Bool("clear-unverified", false, "清除 UNVERIFIED 标记")
+	checkChain := fs.Bool("chain", false, "解锁并计算 packs.referenced/orphan/missing、校验锚点（需要主密码）")
 	if err := fs.Parse(args); err != nil {
 		return apexerr.Wrap(err, apexerr.CodeUsage, "参数错误")
 	}
@@ -283,6 +286,49 @@ func cmdStatus(a *App, g *globalFlags, args []string) error {
 		warnings = append(warnings, "还没有任何 pack（尚未备份）")
 	}
 
+	referencedCount, orphanCount, missingCount := 0, 0, 0
+	if *checkChain && layout != nil {
+		if pw, perr := a.password(g, "请输入主密码：", false); perr != nil {
+			warnings = append(warnings, "未能取得主密码，packs.referenced/orphan/missing 未计算")
+		} else {
+			keys, kerr := s.meta.Unlock(pw)
+			zero(pw)
+			if kerr != nil {
+				warnings = append(warnings, "主密码无法解锁 vault，链统计未计算")
+			} else {
+				s.keys = keys
+				chain, cerr := journal.Load(layout, keys.Sub.Journal.Bytes(), keys.VaultID[:], journal.LoadOptions{})
+				if cerr != nil {
+					warnings = append(warnings, "链校验失败："+cerr.Error())
+				} else {
+					localSet := make(map[string]bool, len(packs))
+					for _, name := range packs {
+						localSet[name] = true
+					}
+					for name := range chain.Tree.Packs {
+						referencedCount++
+						if !localSet[name] {
+							missingCount++
+						}
+					}
+					orphanCount = len(packs) - (referencedCount - missingCount)
+					if a, ok, _ := s.db.LatestAnchor(); ok {
+						mac := vaultcrypto.AnchorMAC(keys.Sub.Anchor.Bytes(), a.Seq, a.JournalSHA)
+						switch {
+						case mac != a.MAC:
+							verified = false
+							warnings = append(warnings, "锚点 MAC 校验失败（state.db 可能被篡改）")
+						case a.Seq < chain.LastSeq:
+							warnings = append(warnings, fmt.Sprintf("锚点 seq=%d 落后于磁盘 %d", a.Seq, chain.LastSeq))
+						}
+					} else {
+						warnings = append(warnings, "本地没有锚点（无法检测回滚）")
+					}
+				}
+			}
+		}
+	}
+
 	type packsJSON struct {
 		Local      int `json:"local"`
 		Referenced int `json:"referenced"`
@@ -311,10 +357,13 @@ func cmdStatus(a *App, g *globalFlags, args []string) error {
 		LastSeq:     lastSeq,
 		AnchorShort: anchorShort,
 		Verified:    verified,
-		Packs:       packsJSON{Local: len(packs)},
-		Bytes:       bytesJSON{PackTotal: packBytes, JournalTotal: journalBytes, Staging: stagingBytes},
-		TmpEntries:  len(stagingEntries),
-		Warnings:    warnings,
+		Packs: packsJSON{
+			Local: len(packs), Referenced: referencedCount,
+			Orphan: orphanCount, Missing: missingCount,
+		},
+		Bytes:      bytesJSON{PackTotal: packBytes, JournalTotal: journalBytes, Staging: stagingBytes},
+		TmpEntries: len(stagingEntries),
+		Warnings:   warnings,
 	}
 	return s.printJSONOrHuman(doc, func() {
 		w := s.stdout
@@ -326,7 +375,12 @@ func cmdStatus(a *App, g *globalFlags, args []string) error {
 		} else {
 			fmt.Fprintf(w, "Anchor       无（尚未提交过）\n")
 		}
-		fmt.Fprintf(w, "Data         %s in %d packs\n", humanBytes(packBytes), len(packs))
+		if *checkChain {
+			fmt.Fprintf(w, "Data         %s in %d packs（引用 %d · 孤儿 %d · 缺失 %d）\n",
+				humanBytes(packBytes), len(packs), referencedCount, orphanCount, missingCount)
+		} else {
+			fmt.Fprintf(w, "Data         %s in %d packs\n", humanBytes(packBytes), len(packs))
+		}
 		fmt.Fprintf(w, "Journals     %s in %d files\n", humanBytes(journalBytes), len(journals))
 		fmt.Fprintf(w, "Staging      %s in %d entries\n", humanBytes(stagingBytes), len(stagingEntries))
 		fmt.Fprintf(w, "Health       %s\n", strings.Join(append([]string{anchorHealth(verified, hasAnchor)}, warnings...), " · "))

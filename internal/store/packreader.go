@@ -5,6 +5,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"time"
 
 	"github.com/tangthinker/encry-immortals/internal/apexerr"
 	"github.com/tangthinker/encry-immortals/internal/codec"
@@ -103,6 +104,28 @@ func (r *PackReader) sizeMismatch(rel string, got int64, want uint64) error {
 		"pack 大小与 journal 记录不一致：%s（实际 %d，期望 %d）", rel, got, want).
 		WithScope("pack 可能尚未同步完成，或已被云端截断").
 		WithNext("等待网盘同步完成后重试；若持续不一致，执行 apex verify --size")
+}
+
+// OpenWithRetry retries a missing or size-mismatched pack for up to timeout,
+// which is the only place apex is allowed to wait for a cloud sync (spec 06.6).
+func (r *PackReader) OpenWithRetry(rel string, expectSize uint64, timeout time.Duration, onWait func(name string)) (*packHandle, error) {
+	if timeout <= 0 {
+		return r.Open(rel, expectSize)
+	}
+	deadline := time.Now().Add(timeout)
+	for {
+		h, err := r.Open(rel, expectSize)
+		if err == nil {
+			return h, nil
+		}
+		if apexerr.CodeOf(err) != apexerr.CodeIncomplete || time.Now().After(deadline) {
+			return nil, err
+		}
+		if onWait != nil {
+			onWait(rel)
+		}
+		time.Sleep(500 * time.Millisecond)
+	}
 }
 
 // PackID returns the pack's identity (part of every slice AAD).

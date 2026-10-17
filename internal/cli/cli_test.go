@@ -406,3 +406,46 @@ func TestCLIDisasterRecoveryDrill(t *testing.T) {
 		t.Fatalf("recovered symlink = %q, %v", link, err)
 	}
 }
+func TestCLIStatusChainAndWaitForPacks(t *testing.T) {
+	env := newCLIEnv(t)
+	env.writeSource(t)
+	if _, _, code := env.run(t, "backup", "--source", env.source); code != 0 {
+		t.Fatal("backup failed")
+	}
+	out, errOut, code := env.run(t, "status", "--chain", "--json")
+	if code != 0 {
+		t.Fatalf("status --chain exit = %d: %s", code, errOut)
+	}
+	var doc struct {
+		Packs struct {
+			Local      int `json:"local"`
+			Referenced int `json:"referenced"`
+			Orphan     int `json:"orphan"`
+			Missing    int `json:"missing"`
+		} `json:"packs"`
+	}
+	if err := json.Unmarshal([]byte(out), &doc); err != nil {
+		t.Fatalf("status --chain --json invalid: %v", err)
+	}
+	if doc.Packs.Local != 1 || doc.Packs.Referenced != 1 || doc.Packs.Missing != 0 || doc.Packs.Orphan != 0 {
+		t.Fatalf("unexpected pack statistics: %+v", doc.Packs)
+	}
+
+	// Remove the only pack: restore must wait, then fail with E13 (13).
+	packs, err := filepath.Glob(filepath.Join(env.target, "data", "*", "*.dat"))
+	if err != nil || len(packs) == 0 {
+		t.Fatalf("no packs found: %v", err)
+	}
+	if err := os.Remove(packs[0]); err != nil {
+		t.Fatal(err)
+	}
+	start := time.Now()
+	_, _, code = env.run(t, "restore", filepath.Join(env.root, "late"), "--wait-for-packs", "1s")
+	elapsed := time.Since(start)
+	if code != apexerr.ExitIncomplete {
+		t.Fatalf("restore with a missing pack exit = %d, want %d", code, apexerr.ExitIncomplete)
+	}
+	if elapsed < time.Second {
+		t.Fatalf("--wait-for-packs returned after %s, expected >= 1s", elapsed)
+	}
+}

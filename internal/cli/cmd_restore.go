@@ -4,6 +4,8 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/tangthinker/encry-immortals/internal/apexerr"
@@ -19,6 +21,7 @@ func cmdRestore(a *App, g *globalFlags, args []string) error {
 	overwrite := fs.String("overwrite", pipeline.OverwriteNever, "never|if-changed|always")
 	allowExternal := fs.Bool("allow-external-symlink", false, "允许还原指向绝对路径的符号链接")
 	restoreSUID := fs.Bool("restore-suid", false, "还原 setuid/setgid 位")
+	waitPacks := fs.String("wait-for-packs", "", "等待缺失 pack 同步完成的最长时间（如 120s / 5m）")
 	dryRun := fs.Bool("dry-run", false, "只统计不写盘")
 	if err := parseInterspersed(fs, args); err != nil {
 		return apexerr.Wrap(err, apexerr.CodeUsage, "参数错误")
@@ -40,6 +43,10 @@ func cmdRestore(a *App, g *globalFlags, args []string) error {
 	if err != nil {
 		return err
 	}
+	wait, err := parseWaitDuration(*waitPacks)
+	if err != nil {
+		return err
+	}
 	res, err := pipeline.Restore(pipeline.RestoreOptions{
 		Layout:               layout,
 		Keys:                 s.keys,
@@ -47,6 +54,7 @@ func cmdRestore(a *App, g *globalFlags, args []string) error {
 		DestDir:              dest,
 		AtSeq:                *at,
 		Overwrite:            *overwrite,
+		WaitForPacks:         wait,
 		AllowExternalSymlink: *allowExternal,
 		RestoreSUID:          *restoreSUID,
 		DryRun:               *dryRun,
@@ -218,3 +226,23 @@ func cmdCat(a *App, g *globalFlags, args []string) error {
 }
 
 var _ = os.Stdout
+
+// parseWaitDuration accepts "120s", "5m" or a bare number of seconds.
+func parseWaitDuration(s string) (time.Duration, error) {
+	s = strings.TrimSpace(s)
+	if s == "" {
+		return 0, nil
+	}
+	if n, err := strconv.Atoi(s); err == nil {
+		if n < 0 {
+			return 0, apexerr.New(apexerr.CodeUsage, "--wait-for-packs 不能为负")
+		}
+		return time.Duration(n) * time.Second, nil
+	}
+	d, err := time.ParseDuration(s)
+	if err != nil || d < 0 {
+		return 0, apexerr.Newf(apexerr.CodeUsage, "--wait-for-packs 取值非法：%q", s).
+			WithNext("使用 120s / 5m 这类写法")
+	}
+	return d, nil
+}

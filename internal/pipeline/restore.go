@@ -38,6 +38,7 @@ type RestoreOptions struct {
 	DestDir              string
 	AtSeq                uint64
 	Overwrite            string
+	WaitForPacks         time.Duration
 	AllowExternalSymlink bool
 	RestoreSUID          bool
 	DryRun               bool
@@ -371,7 +372,9 @@ func (r *restoreRun) writeFile(n *journal.Node, dest string) error {
 			cleanup()
 			return apexerr.Newf(apexerr.CodeCorrupt, "找不到 pack 指纹：%s", packName)
 		}
-		hnd, oerr := r.reader.Open(packName, pr.Size)
+		hnd, oerr := r.reader.OpenWithRetry(packName, pr.Size, r.opts.WaitForPacks, func(name string) {
+			r.logf("等待 pack 同步完成：%s", name)
+		})
 		if oerr != nil {
 			cleanup()
 			return oerr

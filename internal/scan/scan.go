@@ -45,6 +45,7 @@ type Options struct {
 	Excludes             []string
 	FollowHardlinks      bool // "split": explicitly accept the degradation
 	SparseMaxBytes       int64
+	IgnoreXattr          bool // "ignore_xattr": explicitly accept xattr/ACL loss
 	AllowExternalSymlink bool
 }
 
@@ -111,6 +112,18 @@ func Scan(opts Options) (*Result, error) {
 				e.Sparse = true
 			}
 		}
+		if !opts.IgnoreXattr {
+			has, names, xerr := hasXattrs(p)
+			if xerr != nil {
+				return apexerr.Wrapf(xerr, apexerr.CodeUnsupported, "无法读取扩展属性：%s", normalized)
+			}
+			if has {
+				return apexerr.Newf(apexerr.CodeUnsupported,
+					"检测到扩展属性（xattr）：%s（%d 个：%s）", normalized, len(names), strings.Join(firstNames(names, 3), ", ")).
+					WithScope("xattr / ACL 无法在还原时保留，属于会静默丢失的元数据").
+					WithNext("在 config.toml 设置 scan.ignore_xattr = true 显式接受降级，或用 scan.exclude 排除该路径")
+			}
+		}
 		switch {
 		case mode.IsDir():
 			e.Kind = KindDir
@@ -167,6 +180,14 @@ func Scan(opts Options) (*Result, error) {
 			WithNext("重命名其中一个后重试")
 	}
 	return res, nil
+}
+
+// firstNames returns at most n names for an error message.
+func firstNames(names []string, n int) []string {
+	if len(names) <= n {
+		return names
+	}
+	return append(append([]string{}, names[:n]...), "…")
 }
 
 func pathsOf(entries []Entry) []string {

@@ -73,18 +73,16 @@
 - **验证**：`TestCompact*` 5 个用例 + CLI 实测（dry-run → compact → 切换配置 → rebuild-state → restore → `diff -r` OK → `verify --deep` 0 失败 → 旧库未被改动）。
 - **遗留细节**：同身份 compact 后需手工改配置并 `rebuild-state`；若希望自动切换，请提出（会引入跨目录配置写入，风险是改错用户的配置）。
 
-## Q10（P2）xattr / ACL 检测尚未实现
+## Q10（P2）✅ 已解决：xattr 检测已实现，macOS ACL / 资源分叉仍是缺口
 
-- **问题**：01.6 要求默认对 xattr fail-fast（macOS `com.apple.*`、Linux `security.*`），否则静默丢失。
-- **现状**：代码未检测 xattr/ACL（README 已标注）。实现需要 `x/sys/unix` 的 `Listxattr`（Linux）与 `listxattr`（macOS）以及 Windows 的资源分叉处理。
-- **推荐**：M9 一并实现；在实现前，`doctor` 增加一条 WARN 说明该检查缺失。
+- **实现**：`internal/scan/xattr_{darwinlinux,other}.go` 用 `unix.Llistxattr`（不跟随符号链接）检测；命中即 `E21` 并列出前 3 个属性名，提示 `scan.ignore_xattr = true` 或 `scan.exclude`。
+- **验证**：`TestScanRejectsXattrsByDefault`（设置 `com.apex.test` → 默认拒绝，`IgnoreXattr` 放行）；CLI 实测 E21 文案正确。
+- **仍缺**：macOS 的 ACL（`acl_get_file`，非 xattr）与资源分叉（`com.apple.ResourceFork` 属于 xattr，已被检测）。若需要 ACL，须用平台专用 API，建议单独排期。
 
-## Q11（P2）`status` 的 referenced/orphan/missing 需要解锁
+## Q11（P2）✅ 已解决：`status --chain`
 
-- **问题**：10.6 的 `status --json` 有 `packs.referenced/orphan/missing`，但计算它们必须解密 journal（需要密码）。当前 `status` 不需要密码，只填 `local`，其余为 0。
-- **方案 A**：`status --chain` 时请求密码并填充完整字段（推荐，行为可预期）。
-- **方案 B**：默认请求密码（对脚本不友好）。
-- **当前实现**：A 的字段留空 + `doctor --chain` 提供完整信息。
+- **实现**：新增 `--chain`；解锁后统计 `referenced/orphan/missing`，并校验锚点 MAC、给出"锚点落后于磁盘"告警。默认行为不变（不需要密码）。
+- **验证**：`TestCLIStatusChainAndWaitForPacks` 断言 `local=1, referenced=1, missing=0, orphan=0`。
 
 ## Q12（P2）常见密码字典只有约 120 条
 

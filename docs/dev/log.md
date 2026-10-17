@@ -335,3 +335,34 @@ go vet ./...   → 无输出
 - xattr/ACL 检测仍未实现（Q10）。
 - 30 min fuzz 与三平台 **运行时** CI 未做（编译矩阵已覆盖）。
 - 12.8 第 9 条"恶意输入审计"目前由 wire 的单测 + fuzz 覆盖，尚未形成 20 条手工样例清单。
+---
+
+## 2026-10-17 · M9 之二：xattr 检测、`--wait-for-packs`、`status --chain`
+
+**Do**
+
+- `internal/scan`：新增 `IgnoreXattr` 选项与 `unix.Llistxattr` 检测（linux/darwin，其他平台跳过）。命中即 `E21` 并列出前 3 个属性名；`scan.ignore_xattr = true` 显式降级。
+- `store.PackReader.OpenWithRetry` + restore 的 `WaitForPacks`：唯一允许"等待同步"的地方（06.6），默认关闭；CLI `--wait-for-packs 5m|120s|120`。
+- `apex status --chain`：解锁后统计 `packs.referenced/orphan/missing`，并校验锚点 MAC 与"锚点落后于磁盘"（10.6 / Q11）。
+
+**Check（实际输出）**
+
+~~~text
+$ apex status --chain
+Data         823 B in 2 packs（引用 2 · 孤儿 0 · 缺失 0）
+Health       anchor OK · … · 锚点 seq=1 落后于磁盘 3
+
+$ xattr -w com.apex.test value source/a.txt && apex backup --source source
+E21 检测到扩展属性（xattr）：a.txt（1 个：com.apex.test）。影响：xattr / ACL 无法在还原时保留，
+属于会静默丢失的元数据。建议：设置 scan.ignore_xattr = true 显式接受降级，或用 scan.exclude 排除
+
+$ apex backup --source source            # config: ignore_xattr = true
+no changes                                # 内容未变 → 不产生空 journal（I8）
+
+$ apex restore <dest> --wait-for-packs 2s   # 删掉一个 pack 后
+等待 pack 同步完成：data/2026-10/pack_…_….dat
+E13 pack 不存在：…（约 3 秒后返回，符合预期）
+~~~
+
+- `TestScanRejectsXattrsByDefault` 与 `TestCLIStatusChainAndWaitForPacks` 通过（后者断言退出码 13 且等待 ≥ 1s）。
+- `go test ./...` 全绿。

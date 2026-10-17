@@ -17,7 +17,7 @@
 | `init`（KDF 校准一次即冻结）、`export-key` / `import-key`（Armor Key） | ✅ |
 | `backup`（增量、读期一致性、dry-run、session 上限）、`note` | ✅ |
 | `restore`（快照穿梭 `--at`、覆盖策略、路径安全、断点续解） | ✅ |
-| `log` / `show` / `ls` / `cat` / `status` / `doctor` / `verify` / `gc` / `rebuild-state` | ✅ |
+| `log` / `show` / `ls` / `cat` / `status`（`--chain` 可算引用/孤儿/缺失）/ `doctor` / `verify` / `gc` / `rebuild-state` | ✅ |
 | `compact`（重建回收已删除历史，支持 `--new-identity`） | ✅ |
 | checkpoint journal 生成 | ⏳ v1 不生成（实测：1000 次提交链校验仅 57 ms；规范对符号链接有缺口，见 Q7） |
 | `watch` / `mount` / 改密码 / 去重 / eviction | ❌ 规范明确不做 |
@@ -50,6 +50,9 @@ apex restore /tmp/restore-check --at-latest
 # 5. 校验
 apex verify --deep
 apex doctor --chain
+
+# 云端还没同步完？只有 restore 允许等待
+apex restore /tmp/restore-check --wait-for-packs 5m
 
 # 6. 回收已删除历史（旧库保持不动，验证后再手工删）
 apex compact --out /path/to/new-target
@@ -84,7 +87,7 @@ apex --password-file /run/secrets/apex backup --source /data --json
 2. **Armor Key 与密码必须分开存放**，且都不要放进 TargetDir 或任何同步目录。
 3. **不做去重**：同一文件改一版就多占一份空间，这是不可变追加的固有代价。
 4. **单写者**：同一 TargetDir 只允许一个 apex 进程/主机写入（flock + `.apex.lock` + 严格 seq）。
-5. **不支持项 fail-fast**：硬链接、设备文件/FIFO/socket、非法 UTF-8 路径、超长路径、大小写折叠冲突会直接报错（退出码 21）。xattr/ACL 检测尚未实现（见 Q10）。
+5. **不支持项 fail-fast**：硬链接、xattr/ACL（`com.apple.*`、`security.*` 等）、设备文件/FIFO/socket、非法 UTF-8 路径、超长路径、大小写折叠冲突都会直接报错（退出码 21）。xattr 可用 `scan.ignore_xattr = true` 显式降级；macOS 的 ACL 与资源分叉不在 xattr 接口内，属于已知缺口。
 6. **不看网盘状态**：程序无法感知同步是否完成；跨机恢复用 `verify --size` 确认 pack 齐了再 restore。
 
 ## 性能（本机实测，128 MiB 不可压缩数据）
