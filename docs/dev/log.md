@@ -225,3 +225,29 @@ $ apex verify --sample 2        → 本地 2 / 引用 2 / 缺失 0；抽样 2 �
 - `go test ./...` → 16 个包全 `ok`（cli 3.0 s、pipeline 0.86 s，其余 ≤ 0.8 s）。
 - `go vet ./...` → 无输出。
 - `apex backup --exclude` 新增可重复 flag；`Makefile` 的 gofmt 范围收敛到 `./cmd ./internal ./tools`（避免扫到 `.cache/gomod`）。
+---
+
+## 2026-10-17 · 决策取证：checkpoint 到底值不值得做
+
+**问题**：Q7 需要判断"扩展 checkpoint schema 支持符号链接"是否值得。单凭直觉容易高估收益，所以先量化成本。
+
+**Do**
+
+- 新增 `internal/journal/scaling_test.go`（`APEX_SCALE_TEST=1` 才运行，避免拖慢默认测试）：构造 N 个真实 journal（真加密、真文件），测量 `journal.Load` 的"链校验 + 重放"耗时。
+
+**Check（实际输出）**
+
+| 提交数 | 每提交 op | 总 op | build | **load（校验+重放）** |
+|---|---|---|---|---|
+| 100 | 10 | 1,000 | 720 ms | **4 ms** |
+| 500 | 10 | 5,000 | 3.5 s | **27 ms** |
+| 1000 | 10 | 10,000 | 7.1 s | **57 ms** |
+| 1000 | 100 | 100,000 | 7.4 s | **86 ms** |
+| 2000 | 10 | 20,000 | 14.4 s | **65 ms** |
+
+（build 列是测试夹具生成时间，与用户无关。）
+
+**Act**
+
+- 结论修正：12.7 要求"1000 次提交 < 3 s"，当前**无 checkpoint 就已 < 0.1 s**；且 `prev_hash` 在密文内（04.2）使 checkpoint **无法**减少解密量，只能省 op 应用。
+- Q7 推荐从"扩 schema"改为"**暂不扩**（维持 v1 不生成 checkpoint），未来历史库过大时再按方案 A 一次做对"；ADR-015 补充实测数据。

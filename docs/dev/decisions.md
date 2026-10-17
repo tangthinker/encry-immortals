@@ -115,6 +115,7 @@
 - **决策**：v1 **不生成** checkpoint，始终全量重放；解码端已能正确读取 checkpoint（含 pack→txn 反查），为将来扩展留好位置。
 - **代价**：restore/backup 启动时间随提交次数线性增长。
 - **待用户决策**：见 open-questions Q7（扩展 schema 加 `links[]` 并升 body 版本，或接受"checkpoint 库不支持符号链接"）。
+- **补充（2026-10-17 实测）**：`TestChainLoadScaling` 测得 1000 次提交（1 万 op）链校验+重放 **57 ms**，1000 次提交 × 100 op（10 万 op）**86 ms**，2000 次提交 **65 ms**——远低于 12.7 的 3 s 目标。另有一个结构性原因：`prev_hash` 在密文内（04.2），checkpoint **不能**减少解密量，只能省掉 op 应用。因此 ADR-015 的"v1 不生成 checkpoint"由"临时取舍"升级为**有数据支撑的结论**，Q7 的方案 A 仅在未来历史库过大时才需要。
 
 ## ADR-016 session 上限的截断语义
 

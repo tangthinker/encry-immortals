@@ -39,13 +39,25 @@
 - **问题**：`checkpoint.every_commits=256`、`checkpoint.max_age_days=30` 是否保持 spec 默认？
 - **推荐**：保持。
 - **状态**：待确认。
-## Q7（P0）checkpoint 与符号链接的规范缺口
+## Q7（P0，已有实测结论）checkpoint 与符号链接的规范缺口
 
 - **问题**：04.4 的 checkpoint `tree` 节点无法表达符号链接目标（见 ADR-015）。若生成 checkpoint，重放起点之后的符号链接会丢失。
-- **方案 A（推荐）**：扩展 checkpoint payload 为 `[kind=1, vault_params, packs, dirs, tree, links]`（新增第 6 个元素，`links = [path, target]`），journal body 版本从 3 升到 4，解码端同时接受 3/4。**需要你确认可以改 spec 的线格式。**
-- **方案 B**：checkpoint 只在"库中没有符号链接"时生成（实现简单，但行为随数据变化，难以解释）。
-- **方案 C**：维持 v1 现状——永不生成 checkpoint，接受 restore 随历史线性变慢。
-- **当前实现**：C（ADR-015）。改动量估计：线格式 + 生成策略 + 属性测试，约半天。
+- **实测（2026-10-17，`APEX_SCALE_TEST=1 go test ./internal/journal -run TestChainLoadScaling -v`）**：
+
+| 提交数 | 每提交 op 数 | 总 op 数 | 链校验+重放耗时 |
+|---|---|---|---|
+| 100 | 10 | 1,000 | 4 ms |
+| 500 | 10 | 5,000 | 27 ms |
+| 1000 | 10 | 10,000 | 57 ms |
+| 1000 | 100 | 100,000 | 86 ms |
+| 2000 | 10 | 20,000 | 65 ms |
+
+  12.7 的验收目标是"1000 次提交（含 checkpoint）< 3 s"；**当前不含 checkpoint 只有 57 ms**，而且 100k op 的 1000 次提交也只有 86 ms。
+- **为什么 checkpoint 收效有限**：I5 要求校验每个 journal 的 `prev_hash`，而 `prev_hash` 在**密文内部**（04.2），所以无论有没有 checkpoint，都必须解密全部 journal；checkpoint 只能省掉"把 op 应用到树上"这一步，而实测这一步不是瓶颈。
+- **修订后的方案 A**：扩 payload 为 `[kind=1, vault_params, packs, dirs, tree, links]`（journal body 升 v4，解码端兼容 v3）。收益主要是**空间与语义完整**（checkpoint 能完整表达符号链接），不是速度。
+- **方案 B**：只在"库中没有符号链接"时生成 checkpoint（行为随数据变化，难解释）。
+- **方案 C（当前实现，修订后推荐）**：v1 不生成 checkpoint。等到真实库的链加载超过 3 s（或 journal 总体积达到数百 MB）再引入，届时按方案 A 一次性做对。
+- **状态**：已按 C 实现；是否升级为 A 取决于你对"未来是否要支持超大历史库"的判断。
 
 ## Q8（P2）源根目录的 mode/mtime 未记录
 
