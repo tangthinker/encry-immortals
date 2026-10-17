@@ -1,0 +1,14 @@
+# build outputs
+/bin/
+/dist/
+/apex
+*.test
+*.out
+coverage.*
+
+# editor / OS
+.DS_Store
+.idea/
+.vscode/
+# workspace-local Go caches (this sandbox has read-only global caches)
+.cache/

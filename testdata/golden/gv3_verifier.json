@@ -1,0 +1,8 @@
+{
+  "canon_kdf": "argon2id|t=3|m=262144|p=4|k=32|salt=EBESExQVFhcYGRobHB0eHw",
+  "ciphertext_hex": "c107aef0f7e430ca57613ee3394dc418d0afcbe768e67456ae00c0c71453ade8cd6178",
+  "journal_key_hex": "fc5f989062ec683b23d3046e854c2ea0fb76a893873bade78b5759e37e3f0a59",
+  "nonce_hex": "202122232425262728292a2b2c2d2e2f3031323334353637",
+  "plaintext": "APEX_AEAD_VERIFY_OK",
+  "vault_id_hex": "000102030405060708090a0b0c0d0e0f"
+}
