@@ -42,7 +42,7 @@ chmod 600 ~/.config/apex/config.toml
 apex init
 
 # 4. 备份 / 查看 / 还原
-apex backup --source ~/Documents -m "日常增量"
+apex backup --source ~/Documents -m "日常增量" --exclude '*.log'
 apex log
 apex status
 apex restore /tmp/restore-check --at-latest

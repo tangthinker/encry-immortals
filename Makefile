@@ -18,7 +18,7 @@ vet:
 	$(GO) vet ./...
 
 fmt:
-	gofmt -l -w .
+	gofmt -l -w ./cmd ./internal ./tools
 
 # Golden vectors: regenerating requires an explicit wire-version bump (12.3).
 golden:

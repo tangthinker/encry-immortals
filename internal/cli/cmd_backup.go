@@ -3,6 +3,7 @@ package cli
 import (
 	"flag"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/tangthinker/encry-immortals/internal/apexerr"
@@ -20,6 +21,8 @@ func cmdBackup(a *App, g *globalFlags, args []string) error {
 	strict := fs.Bool("strict", false, "全量内容 hash 比对，不依赖 mtime")
 	dryRun := fs.Bool("dry-run", false, "只报告将发生的变更，不落盘")
 	breakLock := fs.Bool("break-lock", false, "删除 TargetDir/.apex.lock（确认对方已失效时使用）")
+	var excludes stringList
+	fs.Var(&excludes, "exclude", "额外排除规则（可重复，如 --exclude '*.log'）")
 	if err := fs.Parse(args); err != nil {
 		return apexerr.Wrap(err, apexerr.CodeUsage, "参数错误")
 	}
@@ -34,6 +37,9 @@ func cmdBackup(a *App, g *globalFlags, args []string) error {
 	defer s.Close()
 	if err := requireTarget(s.cfg); err != nil {
 		return err
+	}
+	if len(excludes) > 0 {
+		s.cfg.Scan.Exclude = append(append([]string{}, s.cfg.Scan.Exclude...), excludes...)
 	}
 	layout, err := newLayout(s.cfg)
 	if err != nil {
@@ -139,3 +145,15 @@ func cmdNote(a *App, g *globalFlags, args []string) error {
 }
 
 var _ = wire.JournalFormatVersion
+
+// stringList is a repeatable string flag.
+type stringList []string
+
+// String renders the accumulated values for help output.
+func (s *stringList) String() string { return strings.Join(*s, ",") }
+
+// Set appends one value.
+func (s *stringList) Set(v string) error {
+	*s = append(*s, v)
+	return nil
+}

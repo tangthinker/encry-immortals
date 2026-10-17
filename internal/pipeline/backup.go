@@ -500,10 +500,13 @@ func (r *backupRun) updateState(db *index.DB, diff *Diff, seq uint64, journalSHA
 				return err
 			}
 		case wire.OpMeta:
-			if err := db.PutEntry(index.Entry{
-				PathHMAC: hm, Size: int64(op.Size), MtimeNS: op.ModTimeNS,
-				ContentSHA256: op.ContentSHA256, LastSeq: seq,
-			}); err != nil {
+			// A META op only carries mode/mtime: preserve the cached content hash.
+			entry := index.Entry{PathHMAC: hm, Size: int64(op.Size), MtimeNS: op.ModTimeNS, LastSeq: seq}
+			if prev, ok, perr := db.Entry(hm); perr == nil && ok {
+				entry.ContentSHA256 = prev.ContentSHA256
+				entry.CtimeNS = prev.CtimeNS
+			}
+			if err := db.PutEntry(entry); err != nil {
 				return err
 			}
 		case wire.OpDelete:
