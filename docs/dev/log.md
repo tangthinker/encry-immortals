@@ -366,3 +366,19 @@ E13 pack 不存在：…（约 3 秒后返回，符合预期）
 
 - `TestScanRejectsXattrsByDefault` 与 `TestCLIStatusChainAndWaitForPacks` 通过（后者断言退出码 13 且等待 ≥ 1s）。
 - `go test ./...` 全绿。
+---
+
+## 2026-10-17 · M9 之三：`doctor --camouflage` 与恶意输入审计
+
+**Do**
+
+- `doctor --camouflage`（06.7）：检查 TargetDir 内是否出现可疑扩展名（`.enc/.crypto/.zip/.bak/.docx/.mp4/.pdf/.tar/.gz`）、pack 命名是否符合 `pack_<13位ms>_<6位36进制>.dat`、抽查前 8 个 pack 的文件头是否命中已知魔数（ZIP/PDF/PNG/gzip）。
+- `TestMaliciousInputAudit`（12.8 第 9 条）：对一个真实双提交库的**克隆**逐项做破坏，断言失败与错误码：
+  1. pack 截断 → E13；2. 切片 nonce 翻位 → E12；3. pack 头 ver_alg 篡改 → E12；4. 切片区清零 → E12；5. pack 删除 → E13；6. pack 追加垃圾 → E13；7. journal 密文翻位 → E12；8. journal 截断 → E12；9. journal 重命名 → E11；10. journal 覆盖到更大 seq → E12；11. 删除中间 journal → E11；12. 删除最后一个 journal → 由锚点发现（seq 回退）；13. 外部 vault 的 journal → E12/E11；14. `../`、绝对路径、`a//b` 路径 → 编码期拒绝；15. 锚点 MAC 篡改 → 校验失败。
+  其余线格式用例（非规范 msgpack、未知 op、切片下标不连续、footer 截断）已在 `internal/wire` 的单测中覆盖。
+
+**Check（实际输出）**
+
+- `go test ./internal/pipeline -run TestMaliciousInputAudit -v` → 15 个子用例全 PASS（1.5 s）。
+- 过程中发现一个**测试语义**问题（不是实现缺陷）：`Restore` 遇到损坏文件会继续还原其余文件并通过 `res.Corrupt` 报告，CLI 末了返回 E12；审计用例最初只看 `Restore` 的 error 就误判为"未检出"。已把断言改成与 CLI 一致。
+- `go test ./...` 全绿；`go vet ./...` 无输出。

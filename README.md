@@ -49,7 +49,8 @@ apex restore /tmp/restore-check --at-latest
 
 # 5. 校验
 apex verify --deep
-apex doctor --chain
+apex doctor --chain            # 链、锚点、孤儿
+apex doctor --camouflage       # 伪装命名/文件头审计（06.7）
 
 # 云端还没同步完？只有 restore 允许等待
 apex restore /tmp/restore-check --wait-for-packs 5m

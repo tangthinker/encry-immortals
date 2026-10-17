@@ -41,5 +41,5 @@
 | M5 | ✅ 完成 | S0–S7、diff 排序、读期一致性、dry-run、session 截断 |
 | M6 | ✅ 完成 | 链校验/重放、restore 安全边界、快照穿梭、断点续解 |
 | M7 | ✅ 完成（compact 除外） | 16 个命令可用；status/doctor/verify 有 JSON |
-| M8 | ✅ 基本完成 | K1–K8 真实 kill 注入矩阵、属性测试、3 个 fuzz 目标；30min fuzz 与跨平台 CI 待补 |
+| M8 | ✅ 基本完成 | K1–K8 kill 注入、属性测试、3 个 fuzz 目标（2min×3）、15 项恶意输入审计；30min fuzz 与运行时 CI 待补 |
 | **M9** 收尾 | `compact` ✅、跨平台**编译** ✅、性能基线 ✅（280/418 MiB/s）、xattr（Q10）✅、运行时 CI ⬜、checkpoint（Q7 已决定暂不做） | — | 12.7 |

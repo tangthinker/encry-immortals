@@ -1,11 +1,13 @@
 package cli
 
 import (
+	"bytes"
 	"crypto/sha256"
 	"flag"
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strings"
 
@@ -26,6 +28,7 @@ func cmdDoctor(a *App, g *globalFlags, args []string) error {
 	fs := flag.NewFlagSet("doctor", flag.ContinueOnError)
 	fs.SetOutput(a.Stderr)
 	checkChain := fs.Bool("chain", false, "解密并校验整条哈希链（需要主密码）")
+	camouflage := fs.Bool("camouflage", false, "检查 TargetDir 的伪装命名与文件头（06.7）")
 	selfCheck := fs.Bool("self-check", false, "运行可运行时验证的不变量检查")
 	if err := fs.Parse(args); err != nil {
 		return apexerr.Wrap(err, apexerr.CodeUsage, "参数错误")
@@ -83,6 +86,10 @@ func cmdDoctor(a *App, g *globalFlags, args []string) error {
 		}
 	} else {
 		add("TargetDir", "SKIP", "未配置")
+	}
+
+	if *camouflage && layout != nil {
+		runCamouflageChecks(layout, add)
 	}
 
 	if *checkChain || *selfCheck {
@@ -506,3 +513,78 @@ func cmdRebuildState(a *App, g *globalFlags, args []string) error {
 }
 
 var _ = sha256.Sum256
+
+// runCamouflageChecks implements the audit list of spec 06.7.
+func runCamouflageChecks(layout *store.Layout, add func(name, status, detail string)) {
+	packRe := regexp.MustCompile(`^pack_[0-9]{13}_[0-9a-z]{6}\.dat$`)
+	forbidden := []string{".enc", ".crypto", ".zip", ".bak", ".docx", ".mp4", ".pdf", ".tar", ".gz"}
+	var badExt []string
+	var badNames []string
+	magicHit := ""
+	checked := 0
+	err := filepath.WalkDir(layout.TargetDir, func(p string, d os.DirEntry, werr error) error {
+		if werr != nil {
+			return nil
+		}
+		if d.IsDir() {
+			return nil
+		}
+		name := d.Name()
+		lower := strings.ToLower(name)
+		for _, ext := range forbidden {
+			if strings.HasSuffix(lower, ext) {
+				badExt = append(badExt, name)
+			}
+		}
+		rel, _ := filepath.Rel(layout.TargetDir, p)
+		rel = filepath.ToSlash(rel)
+		if strings.HasPrefix(rel, store.DataDirName+"/") && strings.HasSuffix(name, store.PackSuffix) {
+			if !packRe.MatchString(name) {
+				badNames = append(badNames, rel)
+				return nil
+			}
+			if checked < 8 && magicHit == "" {
+				checked++
+				f, oerr := os.Open(p)
+				if oerr == nil {
+					head := make([]byte, 16)
+					if n, _ := f.Read(head); n >= 8 {
+						for _, sig := range [][]byte{{0x50, 0x4b, 0x03, 0x04}, []byte("%PDF"), {0x89, 0x50, 0x4e, 0x47}, {0x1f, 0x8b}} {
+							if bytes.HasPrefix(head[:n], sig) {
+								magicHit = rel
+							}
+						}
+					}
+					f.Close()
+				}
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		add("伪装检查", "FAIL", "无法遍历 TargetDir："+err.Error())
+		return
+	}
+	if len(badExt) > 0 {
+		add("伪装扩展名", "FAIL", "出现可疑扩展名："+strings.Join(firstFew(badExt, 5), ", "))
+	} else {
+		add("伪装扩展名", "PASS", "只有 .dat / .journal")
+	}
+	if len(badNames) > 0 {
+		add("pack 命名", "FAIL", "不符合 pack_<13位>_<6位36进制>.dat："+strings.Join(firstFew(badNames, 3), ", "))
+	} else {
+		add("pack 命名", "PASS", "全部符合 pack_<13位>_<6位36进制>.dat")
+	}
+	if magicHit != "" {
+		add("文件头魔数", "FAIL", "检测到已知文件类型魔数："+magicHit)
+	} else {
+		add("文件头魔数", "PASS", "抽查的 pack 头没有可识别魔数")
+	}
+}
+
+func firstFew(items []string, n int) []string {
+	if len(items) <= n {
+		return items
+	}
+	return append(append([]string{}, items[:n]...), "…")
+}
