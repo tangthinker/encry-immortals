@@ -111,6 +111,7 @@ apex --password-file /run/secrets/apex backup --source /data --json
 - `apex backup` 会打印 `明文 → 落盘（比例）`，`--json` 中为 `plain_bytes` / `pack_bytes`。
 - `apex status --chain` 会给出 `Logical`（明文总量）与当前压缩比（`bytes.logical_source`）。
 - 临时覆盖：`apex backup --zstd-level 9`、`apex compact --zstd-level 19`。
+- **已有库想压缩得更小**：`apex compact --out <新目录> --zstd-level 19` 会按新级别重新打包整个快照（旧库不改动，验证后再删）。
 
 ## 性能（本机实测，128 MiB 不可压缩数据）
 

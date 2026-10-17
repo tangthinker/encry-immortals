@@ -263,3 +263,41 @@ func TestCompactAtSeqKeepsHistoryFile(t *testing.T) {
 		t.Fatal("source changed unexpectedly")
 	}
 }
+
+// TestCompactRecompressesAtHigherLevel shows how an existing vault gets smaller:
+// compact it again with a higher zstd level (apex compact --out ... --zstd-level 19).
+func TestCompactRecompressesAtHigherLevel(t *testing.T) {
+	e := newEnv(t)
+	e.cfg.Codec.ZstdLevel = 1
+	e.cfg.Codec.MinCompressBytes = 1
+	var corpus bytes.Buffer
+	matches, err := filepath.Glob("../../docs/spec/*.md")
+	if err != nil || len(matches) == 0 {
+		t.Skip("spec documents not available")
+	}
+	for _, m := range matches {
+		raw, readErr := os.ReadFile(m)
+		if readErr != nil {
+			t.Fatal(readErr)
+		}
+		corpus.Write(raw)
+	}
+	writeFile(t, filepath.Join(e.source, "corpus.md"), corpus.Bytes(), 0o644)
+	first := e.backup(t, false)
+	if !first.Changed {
+		t.Fatal("backup should change")
+	}
+
+	e.cfg.Codec.ZstdLevel = 19
+	out := filepath.Join(e.root, "recompressed")
+	res, err := Compact(CompactOptions{
+		Layout: e.layout, Keys: testKeys, Config: e.cfg, OutDir: out,
+	})
+	if err != nil {
+		t.Fatalf("compact at level 19: %v", err)
+	}
+	if res.PackBytes >= first.PackBytes {
+		t.Fatalf("recompression did not shrink the vault: %d -> %d", first.PackBytes, res.PackBytes)
+	}
+	t.Logf("pack bytes level1=%d level19=%d", first.PackBytes, res.PackBytes)
+}

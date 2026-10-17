@@ -432,3 +432,7 @@ E13 pack 不存在：…（约 3 秒后返回，符合预期）
 | 19 | 50 ms | 316.8 KiB | **33%** |
 
 - `apex status --chain` 输出：`Logical 962.2 KiB（落盘/明文 33%）`；`verify --deep` 与 `diff -r` 均通过（level 19 的还原正确）。
+**补充 2（已有库如何"增加压缩"）**
+
+- `apex compact --out <新目录> --zstd-level 19` 会把现有快照按指定级别**重新压缩**成一个新库（旧库不动）。实测把上面的 level-1 库（384 KiB）重压到 320 KiB（−17%），`diff -r` 与 `verify --deep` 均通过。
+- 新增 `TestCompactRecompressesAtHigherLevel`：同一份 spec 文本，level 1 → 58,388 B，level 19 → 49,655 B。
