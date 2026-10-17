@@ -127,6 +127,7 @@ make golden    # 校验 golden vectors
 
 - golden vectors 在 `testdata/golden/`，由 `go run ./tools/goldengen` 生成。**改动任何一个字节都意味着线格式或依赖行为变了**，必须显式评估是否升 wire version。
 - 若本机全局 Go 缓存不可写（受限环境），用仓库内缓存：`export GOCACHE=$PWD/.cache/go-build GOMODCACHE=$PWD/.cache/gomod GOSUMDB=off`。
+- CI 分层见 [.github/workflows/ci.yml](.github/workflows/ci.yml)：push 跑 gofmt/vet/全量测试/崩溃矩阵/golden，夜间跑 3×30 min fuzz，另有三平台编译与 Windows 核心单测。
 - 实现级决策见 [docs/dev/decisions.md](docs/dev/decisions.md)（ADR-001…），待决策事项见 [docs/dev/open-questions.md](docs/dev/open-questions.md)。
 
 ## 许可证

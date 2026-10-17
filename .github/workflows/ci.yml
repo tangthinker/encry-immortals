@@ -1,0 +1,78 @@
+name: ci
+
+on:
+  push:
+  pull_request:
+  schedule:
+    - cron: "0 3 * * *" # nightly: longer fuzz
+
+jobs:
+  test:
+    name: test (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - name: gofmt
+        shell: bash
+        run: test -z "$(gofmt -l ./cmd ./internal ./tools)"
+      - name: vet
+        run: go vet ./...
+      - name: unit + integration + property
+        run: go test ./...
+      - name: crash injection matrix (K1-K8)
+        run: go test ./internal/pipeline -run TestCrashInjectionMatrix -v
+      - name: golden vectors
+        run: go test ./internal/... -run TestGolden -count=1
+
+  windows:
+    name: build + core tests (windows)
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - name: build
+        run: go build ./...
+      # Symlink-based suites (scan/pipeline/cli) are skipped on Windows until the
+      # tests get a privilege-free fixture; the core formats still run.
+      - name: core unit tests
+        run: go test ./internal/apexerr ./internal/armor ./internal/codec ./internal/config ./internal/crypto ./internal/index ./internal/journal ./internal/lock ./internal/pathx ./internal/store ./internal/vault ./internal/wire/...
+
+  cross-build:
+    name: cross build
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        include:
+          - { goos: linux, goarch: amd64 }
+          - { goos: linux, goarch: arm64 }
+          - { goos: windows, goarch: amd64 }
+          - { goos: darwin, goarch: arm64 }
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - run: GOOS=${{ matrix.goos }} GOARCH=${{ matrix.goarch }} go build ./...
+
+  nightly-fuzz:
+    name: nightly fuzz (30 min each)
+    if: github.event_name == 'schedule'
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - run: go test ./internal/wire -run '^$' -fuzz FuzzSliceEnvelope -fuzztime 30m
+      - run: go test ./internal/wire -run '^$' -fuzz FuzzJournalDecode -fuzztime 30m
+      - run: go test ./internal/wire -run '^$' -fuzz FuzzOpenJournalFile -fuzztime 30m

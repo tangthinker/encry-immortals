@@ -382,3 +382,18 @@ E13 pack 不存在：…（约 3 秒后返回，符合预期）
 - `go test ./internal/pipeline -run TestMaliciousInputAudit -v` → 15 个子用例全 PASS（1.5 s）。
 - 过程中发现一个**测试语义**问题（不是实现缺陷）：`Restore` 遇到损坏文件会继续还原其余文件并通过 `res.Corrupt` 报告，CLI 末了返回 E12；审计用例最初只看 `Restore` 的 error 就误判为"未检出"。已把断言改成与 CLI 一致。
 - `go test ./...` 全绿；`go vet ./...` 无输出。
+---
+
+## 2026-10-17 · CI 分层落地（12.9）
+
+**Do**：新增 `.github/workflows/ci.yml`
+
+| 触发 | 内容 |
+|---|---|
+| push / PR | ubuntu + macOS：`gofmt` 检查 → `go vet` → `go test ./...` → 崩溃矩阵 K1–K8 → golden vectors |
+| push / PR | windows：`go build ./...` + 不含符号链接依赖的核心包单测（scan/pipeline/cli 的夹具依赖 `os.Symlink`，在 Windows 上需要额外权限，暂不纳入） |
+| push / PR | 交叉编译：linux/amd64、linux/arm64、windows/amd64、darwin/arm64 |
+| 夜间 schedule | 3 个 fuzz 目标各 30 min |
+
+- 同步在 README 的开发章节注明。
+- 说明：本地已验证这些命令（gofmt/vet/test/crash/golden/交叉编译/2 min fuzz），但 GitHub Actions 本身在当前环境无法执行，属于**未实跑**项。
