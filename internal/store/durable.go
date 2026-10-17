@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 	"runtime"
 
 	"github.com/tangthinker/encry-immortals/internal/apexerr"
@@ -64,12 +65,26 @@ func CommitStaged(f *os.File, stagingPath, finalPath string) error {
 	return RenameDurable(stagingPath, finalPath)
 }
 
-// WriteFileDurable writes data to path via a staging file in stagingDir.
+// WriteFileDurable writes data to path via a randomly named staging file.
 func WriteFileDurable(stagingDir, finalPath string, data []byte, perm os.FileMode) error {
+	return WriteFileDurableAs(stagingDir, "", finalPath, data, perm)
+}
+
+// WriteFileDurableAs is WriteFileDurable with an explicit staging file name,
+// used by the journal commit so the temporary name is <seq>.journal.tmp
+// (spec 05.1 S5).
+func WriteFileDurableAs(stagingDir, tempName, finalPath string, data []byte, perm os.FileMode) error {
 	if err := os.MkdirAll(stagingDir, 0o755); err != nil {
 		return apexerr.Wrapf(err, apexerr.CodeNoSpace, "无法创建暂存目录：%s", stagingDir)
 	}
-	tmp, err := os.CreateTemp(stagingDir, "apex-staged-*")
+	var tmp *os.File
+	var err error
+	if tempName == "" {
+		tmp, err = os.CreateTemp(stagingDir, "apex-staged-*")
+	} else {
+		tmpPath := filepath.Join(stagingDir, tempName)
+		tmp, err = os.OpenFile(tmpPath, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, perm)
+	}
 	if err != nil {
 		return apexerr.Wrapf(err, apexerr.CodeNoSpace, "无法创建暂存文件")
 	}

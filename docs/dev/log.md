@@ -139,3 +139,57 @@ export GOFLAGS=-mod=mod
 **Act / 遗留**
 
 - 待用户决策：Q7 起新增（见 open-questions）。
+---
+
+## 2026-10-17 · M5 备份管线 ✅ / M6 恢复管线 ✅
+
+**Plan**：把 05.1 S0–S7 变成可执行的提交协议；把 04.3–04.5 变成可验证的重放状态机；打通 `init → backup → restore` 的端到端闭环。
+
+**Do（M5）**
+
+- `internal/journal`：`Load` 解密+校验整条链（seq 连续性 I10、文件名 vs body.seq I6、prev_hash 链 I5、pack→txn 反查 I2），`replay` 按 04.5 规则建树（MODIFY→ADD 容错、DELETE/RMDIR 幂等、RMDIR 非空即 E12、META 保留、SYMLINK 记目标）。
+- `internal/scan`：目录遍历 + NFC 归一化 + 排除规则；对硬链接、稀疏文件、设备/FIFO/socket、逃逸符号链接 fail-fast（E21）。
+- `internal/pipeline`：`ComputeDiff`（DELETE→RMDIR 深→浅→MKDIR 浅→深→内容 op，RMDIR 前校验目录已空）；`Backup` 实现 S0–S7：预检/同卷/重叠/白名单 → 暂存清扫 → `.apex.lock` → 重放 + 扫描 → 写 pack（rollover/fsync/rename/目录 fsync）→ 写 journal（zstd+AEAD，seq 严格 +1，O_EXCL 等价语义）→ state.db 与锚点；支持 `--dry-run`、`session_max_mib` 截断、读期 stat 比对与 retry/skip/fail。
+
+**Do（M6）**
+
+- `Restore`：链校验 → 建目录（浅→深）→ 写文件（pack 读取器校验 size/AEAD/codec/plain_sha256，单切片重试 3 次）→ 建符号链接 → 统一 chmod → 深→浅设置 mtime；`--at` 快照穿梭；覆盖策略 never/if-changed/always；zip-slip 路径校验；损坏文件记入清单并继续，结束返回 E12；`.apex-restore-progress` JSONL 断点续解。
+- `apex cat/ls`：直接从 pack 读切片，不落盘。
+
+**Check（实际输出）**
+
+- `go test ./internal/pipeline/...` → `ok`（0.7–0.9 s）：往返（含空文件/160 KiB 多切片/空目录/符号链接）、二次备份无 journal（I8）、删除+修改+新增的统计、META-only、dry-run 零落盘、非空目标拒绝、Target 污染拒绝、源/目标重叠拒绝、链增长连续。
+- 崩溃点近似用例（12.2 的 K4/K5/K7 语义）：孤立 pack 不被引用且不影响后续备份；24h 前的 `.tmp/00000001.journal.tmp` 被清扫；删除 state.db 后二次备份仍判定无变更（证明差异不依赖缓存）。
+- `go test ./internal/journal/... ./internal/scan/...` → `ok`：prev_hash 篡改 → E11；中间 journal 删除 → E11；密文翻位 → 拒绝；重命名 journal（seq 绑定 AAD）→ 拒绝；RMDIR 非空 → E12；硬链接/逃逸符号链接 → E21；NFC 归一化生效。
+
+## 2026-10-17 · M7 CLI 与命令面 ✅（`compact` 除外）
+
+**Do**
+
+- `internal/cli`：全局 flag（`--config/--vault/--json/--debug/--password-fd/--password-file`，含 `APEX_PASSWORD_FD`）、stdout/stderr 双通道、统一退出码；密码只从 TTY/文件/fd 读取，配置文件禁止出现 password 字段。
+- 命令：`init`（校准 + 强度检查 + Armor Key + RECOVERY.txt）、`backup`、`restore`、`log`、`show`、`ls`、`cat`、`status`（含 10.6 JSON）、`doctor`（白名单/同卷/暂存/序号，`--chain` 校验链与锚点）、`verify`（size/抽样/deep）、`export-key`、`import-key`、`gc`、`rebuild-state`、`note`、`version`。
+- `cmd/apex/main.go`：SIGINT/SIGTERM → 退出码 130。
+
+**Check（实际输出，CLI 冒烟）**
+
+~~~text
+$ apex init                     → 打印 vault_id / KDF / 内存峰值 / 单行+分组 Armor Key / 恢复须知路径
+$ apex backup --source ... -m "first commit"
+已提交 seq=1 · ADD 4 MODIFY 0 DELETE 0 META 0 DIR 1 LINK 1
+1 个 pack · 579 B · journal 862 B · 用时 29ms
+$ apex log                      → 00000001 2026-10-17 commit ops=6 dirs=1 packs=1 9c4bdd80 first commit
+$ apex status                   → Data 579 B in 1 packs / Anchor 47BF-5503 / Health anchor OK · …
+$ apex restore <dest>           → 已还原 seq=1 · 文件 4 目录 1 链接 1 · 200.0 KiB · 用时 21ms
+$ diff -r source <dest>         → DIFF OK
+$ apex verify --deep            → 本地 1 / 引用 1 / 缺失 0 / 大小不符 0 / 孤儿 0；深度校验 4 文件 失败 0
+$ apex backup --source ...      → no changes
+$ apex ls                       → 列出 0644/0640/0755、大小、link -> a.txt
+~~~
+
+- `go test ./internal/cli/...` → `ok 2.6s`：备份→日志→状态→还原→deep 校验全链路、退出码（未知命令 2 / 错误密码 10 / 非空目标 2）、`export-key --json` → 删除 vault.meta → `import-key --key-file` 后可继续解锁、`doctor --chain` 无 FAIL、`init` 生成 vault.meta 与 RECOVERY.txt。
+- `go vet ./...` 与 `go test ./...`（15 个包）全部通过。
+
+**遗留**
+
+- `compact` 未实现（Q9）；checkpoint 未生成（Q7）；xattr/ACL 未检测（Q10）；`status` 的 referenced/orphan/missing 需 `doctor --chain` 补（Q11）。
+- 下一步（M8/M9）：`APEX_TEST_CRASH_AT` 真实 kill 注入（K1–K7 全矩阵 ×20）、属性测试（随机树 × checkpoint 间隔）、fuzz 30 min、compact、跨平台构建验证。

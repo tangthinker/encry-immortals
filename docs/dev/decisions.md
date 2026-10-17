@@ -102,3 +102,37 @@
   - `internal/pathx`：**平台策略级**校验（NFC 归一化、大小写折叠冲突、Windows 保留名/长路径、安全 join）。
 - **代价**：两条规则集需要在测试里各自覆盖；好处是"读别人的数据"与"写自己的数据"分别有明确边界。
 - **备选**：全部放到 pathx（解码层会接受危险路径，依赖调用方记得校验，风险高）。
+## ADR-014 备份差异以 journal 重放为准，state.db 只做缓存
+
+- **背景**：05.4 的 fast 模式以 `state.db` 的 `(size, mtime)` 为判据。但 `state.db` 按 D-13 只存 `HMAC(PathKey, path)`，**不存明文路径**——而 `DELETE` op 必须携带明文路径。只靠 state.db 无法生成删除记录。
+- **决策**：每次 `backup` 先重放 journal 链得到当前树（明文路径在内存中），再与扫描结果比对；`state.db` 只承担 (a) 锚点/水位，(b) status/演练时间戳，(c) 未来可作为 hash 缓存。
+- **代价**：每次备份都要解密全部 journal。v1 不生成 checkpoint，所以 1000 次提交会明显变慢（符合 12.7 的"无 checkpoint 允许慢"分支）。
+- **备选**：state.db 存明文路径（违反 D-13 / I13）；或把路径 HMAC→明文映射另存（等于变相存明文）。
+
+## ADR-015 v1 不生成 checkpoint journal
+
+- **背景**：04.4 的 checkpoint payload 是 `[kind=1, vault_params, packs, dirs, tree]`，其中 `tree` 节点只能表达普通文件（`[path, mode, size, mtime, sha, slices]`），**没有符号链接目标字段**。一旦写出 checkpoint，重放起点之后的符号链接就会永久丢失。
+- **决策**：v1 **不生成** checkpoint，始终全量重放；解码端已能正确读取 checkpoint（含 pack→txn 反查），为将来扩展留好位置。
+- **代价**：restore/backup 启动时间随提交次数线性增长。
+- **待用户决策**：见 open-questions Q7（扩展 schema 加 `links[]` 并升 body 版本，或接受"checkpoint 库不支持符号链接"）。
+
+## ADR-016 session 上限的截断语义
+
+- **背景**：10.3 的 `session_max_mib` 限制单次备份写入量，但规范没说"超了怎么办"。
+- **决策**：按路径顺序处理 ADD/MODIFY，达到上限即停止写入**后续文件内容**；已处理的 op 与全部 DELETE/RMDIR/MKDIR/SYMLINK/META 照常提交。结果里 `truncated=true` 并提示剩余改动留给下次。
+- **代价**：一次备份可能只覆盖部分变更；但每次提交仍然自洽，下次会重新检测到剩余变更。
+- **备选**：整体失败（会把已写入的 pack 变成孤儿）；或自动拆成多次提交（复杂且用户不可见）。
+
+## ADR-017 restore 断点续解的进度格式
+
+- **背景**：05.6 要求 `.apex-restore-progress` 支持中断续解。
+- **决策**：目标目录内的 JSONL 文件：首行 `{"seq":N}`，之后每完成一个文件追加 `{"seq":0,"path":"..."}`；续解时按 `seq` 匹配，不匹配即重来；全部完成后删除该文件。判定"已完成"仅用于跳过，仍会按覆盖策略校验内容。
+- **代价**：进度文件本身让目标目录非空；`restore` 的空目录检查显式忽略该文件名。
+- **备选**：state.db 记录（跨机恢复时不存在）。
+
+## ADR-018 读期一致性与切片残留
+
+- **背景**：05.4 要求读前读后 `stat` 比对；但切片是边读边加密写入 pack 的，重试会留下未被引用的切片。
+- **决策**：比对 `(size, mtime_ns, ctime_ns, inode, dev)`；不一致时按 `on_change_during_read`（retry 3 次 / skip / fail）处理。重试产生的废弃切片留在 pack 内但不被 journal 引用——pack 的 footer 会记录它们，`verify` 不把它们当作文件内容。
+- **代价**：极端情况下浪费几十 MiB 云端空间（下次 `compact` 才会消失）。
+- **备选**：先在内存中完整读取再写（大文件内存翻倍，违反 5.5 的内存预算）。
