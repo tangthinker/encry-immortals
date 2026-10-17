@@ -12,8 +12,8 @@
 
 ## Q2（P1）二进制名与命令前缀
 
-- **问题**：二进制名 `apex` 是否接受？spec 全文使用 `apex`，但仓库名为 `encry-immortals`。
-- **推荐**：`apex`（ADR-001）。
+- **问题**：二进制名 `eimmortal` 是否接受？spec 全文使用 `eimmortal`，但仓库名为 `encry-immortals`。
+- **推荐**：`eimmortal`（ADR-001）。
 - **状态**：默认按推荐执行，等待确认。
 
 ## Q3（P1）里程碑范围与顺序
@@ -42,7 +42,7 @@
 ## Q7（P0，已有实测结论）checkpoint 与符号链接的规范缺口
 
 - **问题**：04.4 的 checkpoint `tree` 节点无法表达符号链接目标（见 ADR-015）。若生成 checkpoint，重放起点之后的符号链接会丢失。
-- **实测（2026-10-17，`APEX_SCALE_TEST=1 go test ./internal/journal -run TestChainLoadScaling -v`）**：
+- **实测（2026-10-17，`EIMMORTAL_SCALE_TEST=1 go test ./internal/journal -run TestChainLoadScaling -v`）**：
 
 | 提交数 | 每提交 op 数 | 总 op 数 | 链校验+重放耗时 |
 |---|---|---|---|
@@ -69,7 +69,7 @@
 
 ## Q9（P1）✅ 已解决：`compact` 已实现
 
-- **结论**：`apex compact --out <新 TargetDir> [--at <seq>] [--new-identity --new-vault <dir>] [--dry-run] [--accept-data-loss]`，实现见 ADR-019。
+- **结论**：`eimmortal compact --out <新 TargetDir> [--at <seq>] [--new-identity --new-vault <dir>] [--dry-run] [--accept-data-loss]`，实现见 ADR-019。
 - **验证**：`TestCompact*` 5 个用例 + CLI 实测（dry-run → compact → 切换配置 → rebuild-state → restore → `diff -r` OK → `verify --deep` 0 失败 → 旧库未被改动）。
 - **遗留细节**：同身份 compact 后需手工改配置并 `rebuild-state`；若希望自动切换，请提出（会引入跨目录配置写入，风险是改错用户的配置）。
 

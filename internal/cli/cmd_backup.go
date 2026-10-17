@@ -21,7 +21,7 @@ func cmdBackup(a *App, g *globalFlags, args []string) error {
 	fs.StringVar(&message, "m", "", "提交信息（--message 的简写）")
 	strict := fs.Bool("strict", false, "全量内容 hash 比对，不依赖 mtime")
 	dryRun := fs.Bool("dry-run", false, "只报告将发生的变更，不落盘")
-	breakLock := fs.Bool("break-lock", false, "删除 TargetDir/.apex.lock（确认对方已失效时使用）")
+	breakLock := fs.Bool("break-lock", false, "删除 TargetDir/.eimmortal.lock（确认对方已失效时使用）")
 	zstdLevel := fs.Int("zstd-level", 0, "压缩级别 1..22（0 = 使用 config 的 codec.zstd_level）")
 	var excludes stringList
 	fs.Var(&excludes, "exclude", "额外排除规则（可重复，如 --exclude '*.log'）")
@@ -30,7 +30,7 @@ func cmdBackup(a *App, g *globalFlags, args []string) error {
 	}
 	if *source == "" {
 		return apexerr.New(apexerr.CodeUsage, "backup 需要 --source <源目录>").
-			WithNext("apex backup --source ~/Documents -m '日常增量'")
+			WithNext("eimmortal backup --source ~/Documents -m '日常增量'")
 	}
 	s, err := a.openSession(g, true)
 	if err != nil {
@@ -108,7 +108,7 @@ func cmdBackup(a *App, g *globalFlags, args []string) error {
 			fmt.Fprintf(s.stdout, "预计 %d 个 pack，%s\n", res.EstimatedPacks, humanBytes(int64(res.EstimatedBytes)))
 			return
 		}
-		if res.PlainBytes > 0 {
+		if res.PlainBytes >= 64<<10 {
 			ratio := 100 * float64(res.PackBytes) / float64(res.PlainBytes)
 			fmt.Fprintf(s.stdout, "%d 个 pack · 明文 %s → 落盘 %s（%.0f%%）· journal %s · 用时 %s\n",
 				len(res.Packs), humanBytes(int64(res.PlainBytes)), humanBytes(int64(res.PackBytes)),
@@ -132,7 +132,7 @@ func cmdNote(a *App, g *globalFlags, args []string) error {
 	}
 	message := fs.Arg(0)
 	if message == "" {
-		return apexerr.New(apexerr.CodeUsage, "用法：apex note \"消息\"")
+		return apexerr.New(apexerr.CodeUsage, "用法：eimmortal note \"消息\"")
 	}
 	s, err := a.openSession(g, true)
 	if err != nil {

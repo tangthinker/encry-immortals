@@ -36,9 +36,9 @@ func TestExitMappingIsStable(t *testing.T) {
 func TestErrorFormat(t *testing.T) {
 	e := New(CodeCorrupt, "切片解密失败：data/2026-03/pack_x.dat 偏移 32 处 MAC 校验不通过。").
 		WithScope("该文件可能无法还原").
-		WithNext("apex verify --deep").
+		WithNext("eimmortal verify --deep").
 		WithErr(errors.New("cipher: message authentication failed"))
-	want := "E12 切片解密失败：data/2026-03/pack_x.dat 偏移 32 处 MAC 校验不通过。影响：该文件可能无法还原。建议：apex verify --deep（cipher: message authentication failed）"
+	want := "E12 切片解密失败：data/2026-03/pack_x.dat 偏移 32 处 MAC 校验不通过。影响：该文件可能无法还原。建议：eimmortal verify --deep（cipher: message authentication failed）"
 	if got := e.Error(); got != want {
 		t.Fatalf("Error() = %q\nwant      %q", got, want)
 	}
@@ -65,7 +65,7 @@ func TestExitCode(t *testing.T) {
 
 func TestCopiesDoNotMutateOriginal(t *testing.T) {
 	base := New(CodeUsage, "bad flag")
-	withNext := base.WithNext("run apex --help")
+	withNext := base.WithNext("run eimmortal --help")
 	if base.Next != "" {
 		t.Fatalf("base was mutated: %q", base.Next)
 	}

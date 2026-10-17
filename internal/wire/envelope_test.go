@@ -13,7 +13,7 @@ func sampleIDs() (key, packID, txnID []byte) {
 
 func TestSliceEnvelopeRoundTrip(t *testing.T) {
 	key, packID, txnID := sampleIDs()
-	plain := bytes.Repeat([]byte("apex slice payload "), 1000)
+	plain := bytes.Repeat([]byte("eimmortal slice payload "), 1000)
 	codecID, payload, err := codec.Compress(plain)
 	if err != nil {
 		t.Fatal(err)

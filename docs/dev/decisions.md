@@ -5,12 +5,12 @@
 
 ---
 
-## ADR-001 模块路径与二进制名
+## ADR-001 模块路径与二进制名（二进制名部分已被 ADR-022 取代）
 
-- **背景**：仓库 `github.com/tangthinker/encry-immortals`，spec 全文以 `apex` 称呼工具。
-- **决策**：Go module 路径 = `github.com/tangthinker/encry-immortals`；二进制名 = `apex`（构建产物 `bin/apex`），CLI 帮助与错误文案中的命令名统一为 `apex`。
+- **背景**：仓库 `github.com/tangthinker/encry-immortals`，spec 全文以 `eimmortal` 称呼工具。
+- **决策**：Go module 路径 = `github.com/tangthinker/encry-immortals`；二进制名 = `eimmortal`（构建产物 `bin/eimmortal`），CLI 帮助与错误文案中的命令名统一为 `eimmortal`。
 - **代价**：仓库名与工具名不一致，需要在 README 里说明一次。
-- **备选**：二进制沿用仓库名 `encry-immortals`（与 spec 文案冲突，错误提示里的 `apex ...` 建议命令会失效）。
+- **备选**：二进制沿用仓库名 `encry-immortals`（与 spec 文案冲突，错误提示里的 `eimmortal ...` 建议命令会失效）。
 
 ## ADR-002 依赖策略
 
@@ -60,7 +60,7 @@
 
 ## ADR-007 Go 版本与构建约束
 
-- **决策**：`go 1.24`（`crypto/hkdf` 自 1.24 起进标准库）；开发机 1.27。测试钩子（12.2 `APEX_TEST_CRASH_AT`）只在 `-tags testhooks` 下编译。
+- **决策**：`go 1.24`（`crypto/hkdf` 自 1.24 起进标准库）；开发机 1.27。测试钩子（12.2 `EIMMORTAL_TEST_CRASH_AT`）只在 `-tags testhooks` 下编译。
 - **代价**：用户需 Go ≥ 1.24 构建；发布二进制不受影响。
 
 ## ADR-008 单元测试用低开销 KDF 参数
@@ -141,7 +141,7 @@
 
 - **背景**：11.4 只有流程描述，没有接口细节；同时 `vault.meta` 不能进入 TargetDir（盲盒原则），所以"换身份"必然涉及两个目录。
 - **决策**：
-  - `apex compact --out <新 TargetDir> [--at <seq>] [--new-identity --new-vault <新控制平面>] [--dry-run] [--accept-data-loss]`。
+  - `eimmortal compact --out <新 TargetDir> [--at <seq>] [--new-identity --new-vault <新控制平面>] [--dry-run] [--accept-data-loss]`。
   - **同身份**（默认）：复用当前 `vault.meta` 与密钥，只重建数据目录；完成后提示用户改 `target_dir` 并执行 `rebuild-state`（不自动改 state.db，避免用户还没确认就把缓存指错）。
   - **新身份**：要求 `--new-vault`，走一次 `vault.Init`（新 salt / vault_id / 口令，KDF 重新校准），并把新 `state.db` 的锚点直接写成 seq=1。
   - **只写被引用的内容**：逐个文件读旧切片（校验 AEAD + `plain_sha256`）→ 按当前配置重新压缩 → 写入新 pack；跳过的只是已删除历史。
@@ -171,3 +171,13 @@
 - **代价**：GV-2 的密文字节发生变化 → 重新生成并把"用固定 nonce 重新封包必须逐字节一致"写进测试，防止未来静默漂移。GV-1/3/4/5 不受影响。
 - **实测**（同一份 359,472 B 的 spec 文本，单切片）：level 1 → 58,464 B，level 19 → 49,697 B（省 15%）。`go test -bench BenchmarkCompressLevels` 给出各档吞吐。
 - **备选**：默认改 9（收益 5–15%，但 spec 写死 5，且会拖慢大库首备）；保留帧 CRC（每个切片多 4 B + 一次 CRC 计算，收益为零）。
+## ADR-022 工具更名为 eimmortal（用户可见面改名 + 读取路径兼容）
+
+- **背景**：需求方决定把命令行工具由 `apex` 改名为 `eimmortal`。改名必须区分"用户可见标识"与"协议常量"：前者可以改，后者改了会让已有库永久无法解密。
+- **决策**：
+  1. **改名的**：二进制 `eimmortal`（`cmd/eimmortal`、`bin/eimmortal`）、所有帮助/错误/提示文案、默认配置 `~/.config/eimmortal/config.toml`、默认控制平面 `~/.config/eimmortal-vault`、锁文件 `.eimmortal.lock`、restore 临时后缀 `.eimmortal-tmp`、续解进度 `.eimmortal-restore-progress`、Armor Key 前缀 `EIMMORTAL-KEY-V2-`、环境变量 `EIMMORTAL_PASSWORD_FD` / `EIMMORTAL_TEST_CRASH_AT` / `EIMMORTAL_SCALE_TEST` / `EIMMORTAL_PERF_TEST`。
+  2. **保持不变的（协议层，必须）**：HKDF info 字符串 `apex-storage-payload-v2` 等四把、genesis `APEX-JOURNAL-GENESIS-v3`、`APEX_AEAD_VERIFY_OK`、journal body 版本、AAD 布局、pack/journal 命名、`wire` 常量。
+  3. **读取路径兼容**：`import-key` 接受旧 `APEX-KEY-V2-` 前缀；`.apex.lock` 仍被视为"正在写入"且 `--break-lock` 同时删除两种名字；TargetDir 白名单同时接受两种锁名；restore 读取旧进度文件并原地迁移；`APEX_PASSWORD_FD` / `APEX_TEST_CRASH_AT` 作为环境变量回退。
+  4. 内部 Go 包名 `internal/apexerr` 等保持不变（实现标识，不影响用户与线格式），避免无意义的全仓 import churn。
+- **代价**：文档 `docs/spec/` 仍使用历史名称 `apex`（见其 README 的说明）。默认目录改名后，**若新路径不存在而旧路径存在，会自动沿用旧路径**（config 与 vault 都是），因此升级不需要手工 `mv`；可用 `--config/--vault` 显式覆盖。
+- **备选**：连协议常量一起改（会破坏所有已有库，绝对不可）；只改二进制名（会留下 `apex-vault`、`APEX-KEY-` 等大量旧名，用户困惑）。

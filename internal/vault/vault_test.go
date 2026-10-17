@@ -240,7 +240,7 @@ func TestArmorRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.HasPrefix(armored, "APEX-KEY-V2-") {
+	if !strings.HasPrefix(armored, "EIMMORTAL-KEY-V2-") {
 		t.Fatalf("armor prefix missing: %q", armored[:20])
 	}
 	back, err := ParseArmorString(armored)
@@ -295,7 +295,7 @@ func TestInitWritesControlPlane(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, want := range []string{"主密码不可更改", res.Meta.VaultID, "apex export-key"} {
+	for _, want := range []string{"主密码不可更改", res.Meta.VaultID, "eimmortal export-key"} {
 		if !bytes.Contains(raw, []byte(want)) {
 			t.Errorf("RECOVERY.txt is missing %q", want)
 		}

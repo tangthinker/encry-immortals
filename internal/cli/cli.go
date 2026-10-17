@@ -1,4 +1,4 @@
-// Package cli implements the apex command surface (spec 10).
+// Package cli implements the eimmortal command surface (spec 10).
 //
 // Output contract (§10.6): human progress goes to stderr, result data to stdout.
 // Exit codes are the stable contract of §10.5.
@@ -19,7 +19,7 @@ import (
 	"github.com/tangthinker/encry-immortals/internal/vault"
 )
 
-// Version is reported by "apex version".
+// Version is reported by "eimmortal version".
 var Version = "0.1.0-dev"
 
 // App is the CLI runtime. Fields are injectable for tests.
@@ -74,7 +74,7 @@ func (a *App) Run(args []string) int {
 	}
 	cmd, ok := commands[rest[0]]
 	if !ok {
-		a.fail(apexerr.Newf(apexerr.CodeUsage, "未知命令：%s", rest[0]).WithNext("执行 apex help 查看可用命令"))
+		a.fail(apexerr.Newf(apexerr.CodeUsage, "未知命令：%s", rest[0]).WithNext("执行 eimmortal help 查看可用命令"))
 		return apexerr.ExitUsage
 	}
 	if err := cmd.run(a, g, rest[1:]); err != nil {
@@ -98,8 +98,8 @@ func (a *App) printUsage() {
 	}
 	sort.Strings(names)
 	var b strings.Builder
-	b.WriteString("apex " + Version + " — 加密增量备份（网盘盲盒化）\n\n")
-	b.WriteString("用法：apex [全局选项] <命令> [命令选项]\n\n命令（★ 表示会写入 TargetDir）：\n")
+	b.WriteString("eimmortal " + Version + " — 加密增量备份（网盘盲盒化）\n\n")
+	b.WriteString("用法：eimmortal [全局选项] <命令> [命令选项]\n\n命令（★ 表示会写入 TargetDir）：\n")
 	for _, n := range names {
 		c := commands[n]
 		mark := " "
@@ -109,8 +109,8 @@ func (a *App) printUsage() {
 		b.WriteString(fmt.Sprintf("  %s %-14s %s\n", mark, n, c.summary))
 	}
 	b.WriteString("\n全局选项：\n")
-	b.WriteString("  --config <path>       配置文件（默认 ~/.config/apex/config.toml）\n")
-	b.WriteString("  --vault <dir>         控制平面目录（默认 ~/.config/apex-vault）\n")
+	b.WriteString("  --config <path>       配置文件（默认 ~/.config/eimmortal/config.toml）\n")
+	b.WriteString("  --vault <dir>         控制平面目录（默认 ~/.config/eimmortal-vault）\n")
 	b.WriteString("  --json                结果输出为 JSON（人类进度仍走 stderr）\n")
 	b.WriteString("  --password-fd <n>     从文件描述符读取主密码（非交互场景）\n")
 	b.WriteString("  --password-file <p>   从 0600 权限的文件读取主密码\n")
@@ -174,8 +174,12 @@ func parseGlobalFlags(args []string) (*globalFlags, []string, error) {
 			rest = append(rest, arg)
 		}
 	}
-	if g.passwordFD < 0 && os.Getenv("APEX_PASSWORD_FD") != "" {
-		fmt.Sscanf(os.Getenv("APEX_PASSWORD_FD"), "%d", &g.passwordFD)
+	if g.passwordFD < 0 {
+		if v := firstEnv("EIMMORTAL_PASSWORD_FD", "APEX_PASSWORD_FD"); v != "" {
+			if _, err := fmt.Sscanf(v, "%d", &g.passwordFD); err != nil {
+				return nil, nil, apexerr.New(apexerr.CodeUsage, "EIMMORTAL_PASSWORD_FD 不是整数")
+			}
+		}
 	}
 	return g, rest, nil
 }
@@ -297,4 +301,15 @@ func (s *session) bindCache() error {
 		return err
 	}
 	return s.db.SetVaultID(want)
+}
+
+// firstEnv returns the first non-empty environment variable (legacy fallbacks
+// exist so that scripts written before the rename keep working).
+func firstEnv(names ...string) string {
+	for _, n := range names {
+		if v := os.Getenv(n); v != "" {
+			return v
+		}
+	}
+	return ""
 }

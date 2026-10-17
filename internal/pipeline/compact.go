@@ -19,7 +19,7 @@ import (
 	"github.com/tangthinker/encry-immortals/internal/wire"
 )
 
-// CompactOptions drives "apex compact" (spec 11.4): rebuild a fresh vault that
+// CompactOptions drives "eimmortal compact" (spec 11.4): rebuild a fresh vault that
 // contains only the content referenced by one snapshot.
 type CompactOptions struct {
 	Layout         *store.Layout // old TargetDir

@@ -106,8 +106,8 @@ func TestCrashInjectionMatrix(t *testing.T) {
 		t.Skip("go toolchain not available")
 	}
 	binDir := t.TempDir()
-	bin := filepath.Join(binDir, "apex-testhooks")
-	build := exec.Command(goBin, "build", "-tags", "testhooks", "-o", bin, "../../cmd/apex")
+	bin := filepath.Join(binDir, "eimmortal-testhooks")
+	build := exec.Command(goBin, "build", "-tags", "testhooks", "-o", bin, "../../cmd/eimmortal")
 	if out, err := build.CombinedOutput(); err != nil {
 		t.Fatalf("build tagged binary: %v\n%s", err, out)
 	}
@@ -135,7 +135,7 @@ func TestCrashInjectionMatrix(t *testing.T) {
 		t.Run(stage, func(t *testing.T) {
 			e := newCrashEnv(t, bin, metaBytes, t.TempDir())
 
-			out, code := e.run(t, []string{"APEX_TEST_CRASH_AT=" + stage}, "backup", "--source", e.source, "-m", "crash "+stage)
+			out, code := e.run(t, []string{"EIMMORTAL_TEST_CRASH_AT=" + stage}, "backup", "--source", e.source, "-m", "crash "+stage)
 			if code != 137 {
 				t.Fatalf("crash injection %s: exit=%d out=%s", stage, code, out)
 			}
@@ -171,7 +171,7 @@ func TestCrashInjectionMatrix(t *testing.T) {
 			t.Fatalf("seed backup: exit=%d out=%s", code, out)
 		}
 		dest := filepath.Join(e.dir, "restored")
-		out, code := e.run(t, []string{"APEX_TEST_CRASH_AT=K8"}, "restore", dest)
+		out, code := e.run(t, []string{"EIMMORTAL_TEST_CRASH_AT=K8"}, "restore", dest)
 		if code != 137 {
 			t.Fatalf("K8 crash: exit=%d out=%s", code, out)
 		}

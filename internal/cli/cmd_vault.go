@@ -21,7 +21,7 @@ import (
 )
 
 func cmdVersion(a *App, g *globalFlags, args []string) error {
-	fmt.Fprintf(a.Stdout, "apex %s\n", Version)
+	fmt.Fprintf(a.Stdout, "eimmortal %s\n", Version)
 	return nil
 }
 
@@ -64,12 +64,12 @@ func cmdInit(a *App, g *globalFlags, args []string) error {
 			return apexerr.Wrapf(err, apexerr.CodeNoSpace, "无法记录待加入的 TargetDir")
 		}
 		fmt.Fprintf(a.Stdout, "已登记待加入的 TargetDir：%s\n", target)
-		fmt.Fprintln(a.Stdout, "下一步：apex import-key 并粘贴 Armor Key（来自原机器）。")
+		fmt.Fprintln(a.Stdout, "下一步：eimmortal import-key 并粘贴 Armor Key（来自原机器）。")
 		return nil
 	}
 	if _, err := os.Stat(filepath.Join(vaultDir, vault.MetaFileName)); err == nil {
 		return apexerr.Newf(apexerr.CodeUsage, "该控制平面已初始化：%s", vaultDir).
-			WithNext("若要加入另一台机器的库，请用 apex init --join <TargetDir>")
+			WithNext("若要加入另一台机器的库，请用 eimmortal init --join <TargetDir>")
 	}
 	pw, err := a.password(g, "请输入主密码：", true)
 	if err != nil {
@@ -197,7 +197,7 @@ func cmdImportKey(a *App, g *globalFlags, args []string) error {
 		fmt.Fprintf(a.Stdout, "已登记的 TargetDir：%s\n", strings.TrimSpace(string(pending)))
 		os.Remove(filepath.Join(vaultDir, "pending-target"))
 	}
-	fmt.Fprintln(a.Stdout, "下一步：apex verify --size 检查数据完整性，然后 apex restore <DestDir>。")
+	fmt.Fprintln(a.Stdout, "下一步：eimmortal verify --size 检查数据完整性，然后 eimmortal restore <DestDir>。")
 	return nil
 }
 
@@ -390,7 +390,7 @@ func cmdStatus(a *App, g *globalFlags, args []string) error {
 		}
 		fmt.Fprintf(w, "Journals     %s in %d files\n", humanBytes(journalBytes), len(journals))
 		fmt.Fprintf(w, "Staging      %s in %d entries\n", humanBytes(stagingBytes), len(stagingEntries))
-		if logicalSource > 0 && packBytes > 0 {
+		if logicalSource >= 64<<10 && packBytes > 0 {
 			fmt.Fprintf(w, "Logical      %s（落盘/明文 %.0f%%）\n",
 				humanBytes(logicalSource), 100*float64(packBytes)/float64(logicalSource))
 		}

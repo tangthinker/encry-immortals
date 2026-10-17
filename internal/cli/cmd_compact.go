@@ -25,7 +25,7 @@ func cmdCompact(a *App, g *globalFlags, args []string) error {
 	}
 	if *out == "" {
 		return apexerr.New(apexerr.CodeUsage, "compact 需要 --out <新 TargetDir>").
-			WithNext("apex compact --out /path/to/new-target")
+			WithNext("eimmortal compact --out /path/to/new-target")
 	}
 	s, err := a.openSession(g, true)
 	if err != nil {
@@ -119,7 +119,7 @@ func cmdCompact(a *App, g *globalFlags, args []string) error {
 			WithNext("确认这些文件可以从别处找回后再删除旧库")
 	}
 	if !*dryRun {
-		fmt.Fprintln(s.stderr, "旧库未被改动。切换前请：1) 把 config 的 target_dir 指向新目录；2) 执行 apex rebuild-state；3) 验证通过后再手工删除旧目录（建议保留 ≥30 天）。")
+		fmt.Fprintln(s.stderr, "旧库未被改动。切换前请：1) 把 config 的 target_dir 指向新目录；2) 执行 eimmortal rebuild-state；3) 验证通过后再手工删除旧目录（建议保留 ≥30 天）。")
 	}
 	return nil
 }

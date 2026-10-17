@@ -80,7 +80,7 @@ func WriteFileDurableAs(stagingDir, tempName, finalPath string, data []byte, per
 	var tmp *os.File
 	var err error
 	if tempName == "" {
-		tmp, err = os.CreateTemp(stagingDir, "apex-staged-*")
+		tmp, err = os.CreateTemp(stagingDir, "eimmortal-staged-*")
 	} else {
 		tmpPath := filepath.Join(stagingDir, tempName)
 		tmp, err = os.OpenFile(tmpPath, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, perm)

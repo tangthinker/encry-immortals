@@ -25,7 +25,7 @@ func AcquireControl(dir string) (*ControlLock, error) {
 	f, err := os.OpenFile(path, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o600)
 	if err != nil {
 		if os.IsExist(err) {
-			return nil, apexerr.New(apexerr.CodeLocked, "另一个 apex 进程正在使用该 vault").
+			return nil, apexerr.New(apexerr.CodeLocked, "另一个 eimmortal 进程正在使用该 vault").
 				WithNext("确认无进程后删除 " + path)
 		}
 		return nil, apexerr.Wrapf(err, apexerr.CodeUsage, "无法创建锁文件：%s", path)

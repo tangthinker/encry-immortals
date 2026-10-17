@@ -17,7 +17,7 @@
       "must_be_rejected": true
     }
   ],
-  "prefix": "APEX-KEY-V2-",
+  "prefix": "EIMMORTAL-KEY-V2-",
   "vectors": [
     {
       "payload_hex": "",

@@ -1,5 +1,7 @@
 # APEX 工程规范补充文档集
 
+> **名称说明（2026-10-17）**：本目录成文时工具名为 `apex`，现二进制名为 **`eimmortal`**。文中出现的 `apex <命令>` 请理解为 `eimmortal <命令>`；线格式常量（HKDF info `apex-*-v2`、`APEX-JOURNAL-GENESIS-v3`、`APEX_AEAD_VERIFY_OK`）**保持原样**，改名会使已有库无法解密。详见 [../dev/decisions.md](../dev/decisions.md) ADR-022。
+
 > 母方案：[../tech.md](../tech.md)（下称"母方案"）。**母方案不改动**，本目录只做细节补充与决策落地。
 > 定位差异：母方案回答"是什么 / 为什么"，本目录回答"字节长什么样 / 出错怎么办 / 怎么验收"。
 

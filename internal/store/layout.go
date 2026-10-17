@@ -21,10 +21,13 @@ const (
 	DataDirName    = "data"
 	MetaDirName    = "meta"
 	StagingDirName = ".tmp"
-	LockFileName   = ".apex.lock"
-	JournalSuffix  = ".journal"
-	PackSuffix     = ".dat"
-	packPrefix     = "pack_"
+	LockFileName   = ".eimmortal.lock"
+	// LegacyLockFileName is accepted in the whitelist so that vaults written by
+	// older builds are not reported as polluted.
+	LegacyLockFileName = ".apex.lock"
+	JournalSuffix      = ".journal"
+	PackSuffix         = ".dat"
+	packPrefix         = "pack_"
 	// JournalNameWidth is the zero-padded width of journal file names (§03.1).
 	JournalNameWidth = 8
 	// MaxSeq is the largest sequence representable by an 8-digit file name.
@@ -92,7 +95,7 @@ func samePath(a, b string) bool {
 	return filepath.Clean(a) == filepath.Clean(b)
 }
 
-// Ensure creates the four directories apex owns.
+// Ensure creates the four directories eimmortal owns.
 func (l *Layout) Ensure() error {
 	for _, dir := range []string{l.TargetDir, l.DataDir, l.MetaDir, l.StagingDir} {
 		if err := os.MkdirAll(dir, 0o755); err != nil {
@@ -104,10 +107,11 @@ func (l *Layout) Ensure() error {
 
 // topLevelAllowed is the whitelist from spec §01.1 / I12.
 var topLevelAllowed = map[string]bool{
-	StagingDirName: true,
-	LockFileName:   true,
-	DataDirName:    true,
-	MetaDirName:    true,
+	StagingDirName:     true,
+	LockFileName:       true,
+	LegacyLockFileName: true,
+	DataDirName:        true,
+	MetaDirName:        true,
 }
 
 // ValidateTopLevel enforces the TargetDir entry whitelist. Any foreign entry is
@@ -120,7 +124,7 @@ func (l *Layout) ValidateTopLevel() error {
 	for _, e := range entries {
 		if !topLevelAllowed[e.Name()] {
 			return apexerr.Newf(apexerr.CodeCorrupt, "TargetDir 内出现非白名单条目：%s", e.Name()).
-				WithScope("该目录必须是网盘盲盒，只允许 .tmp/、.apex.lock、data/、meta/").
+				WithScope("该目录必须是网盘盲盒，只允许 .tmp/、.eimmortal.lock、data/、meta/").
 				WithNext("把该条目移出 TargetDir 后重试")
 		}
 	}

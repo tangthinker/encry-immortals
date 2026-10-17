@@ -139,3 +139,12 @@ func TestWriteFileDurable(t *testing.T) {
 		t.Fatalf("staging directory should be empty, has %d entries", len(entries))
 	}
 }
+func TestLayoutAcceptsLegacyLockName(t *testing.T) {
+	l := newTestLayout(t)
+	if err := os.WriteFile(filepath.Join(l.TargetDir, LegacyLockFileName), []byte("{}"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := l.ValidateTopLevel(); err != nil {
+		t.Fatalf("legacy lock file must not be reported as pollution: %v", err)
+	}
+}

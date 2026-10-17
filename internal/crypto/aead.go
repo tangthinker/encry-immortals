@@ -8,7 +8,7 @@ import (
 	"golang.org/x/crypto/chacha20poly1305"
 )
 
-// NewAEAD builds the only AEAD apex uses: XChaCha20-Poly1305 (spec §02.2).
+// NewAEAD builds the only AEAD eimmortal uses: XChaCha20-Poly1305 (spec §02.2).
 func NewAEAD(key []byte) (cipher.AEAD, error) {
 	if len(key) != chacha20poly1305.KeySize {
 		return nil, fmt.Errorf("aead: key must be %d bytes, got %d", chacha20poly1305.KeySize, len(key))
@@ -16,7 +16,7 @@ func NewAEAD(key []byte) (cipher.AEAD, error) {
 	return chacha20poly1305.NewX(key)
 }
 
-// RandomBytes returns n CSPRNG bytes. The only randomness source in apex.
+// RandomBytes returns n CSPRNG bytes. The only randomness source in eimmortal.
 func RandomBytes(n int) ([]byte, error) {
 	if n < 0 {
 		return nil, fmt.Errorf("rand: negative length %d", n)

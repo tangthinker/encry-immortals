@@ -89,7 +89,7 @@ func cmdShow(a *App, g *globalFlags, args []string) error {
 	}
 	rawSeq := fs.Arg(0)
 	if rawSeq == "" {
-		return apexerr.New(apexerr.CodeUsage, "用法：apex show <seq>")
+		return apexerr.New(apexerr.CodeUsage, "用法：eimmortal show <seq>")
 	}
 	seq, err := parseUintFlag(rawSeq, "seq")
 	if err != nil {

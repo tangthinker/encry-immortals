@@ -18,7 +18,7 @@ import (
 // SchemaVersion is bumped only for incompatible changes.
 const SchemaVersion = "1"
 
-// Meta keys used by the rest of apex.
+// Meta keys used by the rest of eimmortal.
 const (
 	MetaVaultID        = "vault_id"
 	MetaLastSeq        = "last_seq"

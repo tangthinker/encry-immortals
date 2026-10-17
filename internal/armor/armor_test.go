@@ -188,3 +188,25 @@ func flipLastPayloadChar(s string) string {
 	}
 	return s[:len(s)-1] + string(repl)
 }
+func TestOpenAcceptsLegacyPrefix(t *testing.T) {
+	meta := []byte(`{"version":2,"vault_id":"AAAA"}`)
+	enc, err := Seal(meta)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.HasPrefix(enc, Prefix) {
+		t.Fatalf("new exports must use %s, got %q", Prefix, enc[:16])
+	}
+	// Keys exported before the rename keep working.
+	legacy := "APEX-KEY-V2-" + strings.TrimPrefix(enc, Prefix)
+	back, err := Open(legacy)
+	if err != nil {
+		t.Fatalf("legacy prefix rejected: %v", err)
+	}
+	if !bytes.Equal(back, meta) {
+		t.Fatal("legacy prefix round trip mismatch")
+	}
+	if grouped := FormatGrouped(legacy); !strings.HasPrefix(grouped, Prefix) {
+		t.Fatalf("grouped legacy key must be re-rendered with the new prefix: %q", grouped[:20])
+	}
+}

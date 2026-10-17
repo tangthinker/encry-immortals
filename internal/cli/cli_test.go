@@ -88,7 +88,7 @@ func (e *cliEnv) run(t *testing.T, args ...string) (string, string, int) {
 
 func (e *cliEnv) writeSource(t *testing.T) {
 	t.Helper()
-	if err := os.WriteFile(filepath.Join(e.source, "a.txt"), []byte("hello apex"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(e.source, "a.txt"), []byte("hello eimmortal"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.MkdirAll(filepath.Join(e.source, "sub"), 0o755); err != nil {
@@ -152,7 +152,7 @@ func TestCLIBackupRestoreFlow(t *testing.T) {
 		t.Fatalf("restore exit = %d out=%q err=%q", code, out, errOut)
 	}
 	got, err := os.ReadFile(filepath.Join(dest, "a.txt"))
-	if err != nil || string(got) != "hello apex" {
+	if err != nil || string(got) != "hello eimmortal" {
 		t.Fatalf("restored content = %q, %v", got, err)
 	}
 	if link, err := os.Readlink(filepath.Join(dest, "link")); err != nil || link != "a.txt" {
@@ -192,7 +192,7 @@ func TestCLISnapshotTravelWithTrailingFlags(t *testing.T) {
 	if code != 0 {
 		t.Fatalf("cat --at exit = %d", code)
 	}
-	if out != "hello apex" {
+	if out != "hello eimmortal" {
 		t.Fatalf("cat --at 1 = %q, want the seq=1 content", out)
 	}
 	out, _, code = env.run(t, "cat", "a.txt", "--at", "2")
@@ -205,7 +205,7 @@ func TestCLISnapshotTravelWithTrailingFlags(t *testing.T) {
 		t.Fatalf("restore --at exit = %d", code)
 	}
 	got, err := os.ReadFile(filepath.Join(dest, "a.txt"))
-	if err != nil || string(got) != "hello apex" {
+	if err != nil || string(got) != "hello eimmortal" {
 		t.Fatalf("restore --at 1 content = %q, %v", got, err)
 	}
 }
@@ -315,7 +315,7 @@ func TestCLIInitCreatesVault(t *testing.T) {
 	if code != 0 {
 		t.Fatalf("init exit = %d, stderr=%q", code, errb.String())
 	}
-	if !bytes.Contains(out.Bytes(), []byte("APEX-KEY-V2-")) {
+	if !bytes.Contains(out.Bytes(), []byte("EIMMORTAL-KEY-V2-")) {
 		t.Fatalf("init did not print an Armor Key")
 	}
 	if _, err := os.Stat(filepath.Join(root, "vault", vault.RecoveryFileName)); err != nil {
@@ -400,7 +400,7 @@ func TestCLIDisasterRecoveryDrill(t *testing.T) {
 		t.Fatalf("restore: exit=%d err=%s", code, errBuf.String())
 	}
 	got, err := os.ReadFile(filepath.Join(dest, "a.txt"))
-	if err != nil || string(got) != "hello apex" {
+	if err != nil || string(got) != "hello eimmortal" {
 		t.Fatalf("recovered content = %q, %v", got, err)
 	}
 	if link, err := os.Readlink(filepath.Join(dest, "link")); err != nil || link != "a.txt" {

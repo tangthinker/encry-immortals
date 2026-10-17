@@ -1,7 +1,7 @@
 # build outputs
 /bin/
 /dist/
-/apex
+/eimmortal
 *.test
 *.out
 coverage.*

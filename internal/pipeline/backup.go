@@ -252,7 +252,7 @@ func Backup(opts BackupOptions) (*BackupResult, error) {
 		}
 	}
 	res.Duration = now().Sub(start)
-	run.logf("已提交 seq=%d（本地完成）。云端同步由网盘客户端负责，可用 apex status 对比本地与云端条目数。", seq)
+	run.logf("已提交 seq=%d（本地完成）。云端同步由网盘客户端负责，可用 eimmortal status 对比本地与云端条目数。", seq)
 	return res, nil
 }
 
@@ -420,7 +420,7 @@ func (r *backupRun) commitJournal(chain *journal.Chain, diff *Diff, packs []wire
 		return 0, zero, 0, apexerr.Newf(apexerr.CodeLocked,
 			"journal 链在本次运行期间发生了变化：内存 seq=%d，磁盘 seq=%d", chain.LastSeq, maxSeq).
 			WithScope("同一 TargetDir 只允许一个写者（I15）").
-			WithNext("确认没有其他 apex 进程或主机在写入后重试")
+			WithNext("确认没有其他 eimmortal 进程或主机在写入后重试")
 	}
 	seq := maxSeq + 1
 	prev := journal.GenesisHash

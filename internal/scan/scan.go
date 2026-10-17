@@ -1,4 +1,4 @@
-// Package scan walks the source directory and rejects everything apex cannot
+// Package scan walks the source directory and rejects everything eimmortal cannot
 // back up losslessly (spec 01.6 D-18, 09.6).
 package scan
 

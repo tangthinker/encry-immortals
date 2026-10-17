@@ -1,4 +1,4 @@
-// Package config loads and validates ~/.config/apex/config.toml (spec 10.3).
+// Package config loads and validates ~/.config/eimmortal/config.toml (spec 10.3).
 //
 // The file never contains secrets: any password-like key is a hard error.
 package config
@@ -93,10 +93,20 @@ type VerifyConfig struct {
 }
 
 // Default returns the documented defaults.
+//
+// Pre-rename installations are picked up automatically: if the new default does
+// not exist but the old apex-vault directory does, the old one is used so that an
+// upgrade does not need a manual move.
 func Default() *Config {
 	home, _ := os.UserHomeDir()
+	vaultDir := filepath.Join(home, ".config", "eimmortal-vault")
+	if !pathExists(vaultDir) {
+		if legacy := filepath.Join(home, ".config", "apex-vault"); pathExists(legacy) {
+			vaultDir = legacy
+		}
+	}
 	return &Config{
-		Vault: VaultConfig{Dir: filepath.Join(home, ".config", "apex-vault")},
+		Vault: VaultConfig{Dir: vaultDir},
 		Storage: StorageConfig{
 			PackMaxBytes:    DefaultPackMaxBytes,
 			SlicePlainBytes: DefaultSlicePlainBytes,
@@ -117,13 +127,25 @@ func Default() *Config {
 	}
 }
 
-// DefaultPath is ~/.config/apex/config.toml.
+// DefaultPath is ~/.config/eimmortal/config.toml, falling back to the
+// pre-rename ~/.config/apex/config.toml when only that one exists.
 func DefaultPath() string {
 	home, err := os.UserHomeDir()
 	if err != nil {
 		return "config.toml"
 	}
-	return filepath.Join(home, ".config", "apex", "config.toml")
+	path := filepath.Join(home, ".config", "eimmortal", "config.toml")
+	if !pathExists(path) {
+		if legacy := filepath.Join(home, ".config", "apex", "config.toml"); pathExists(legacy) {
+			return legacy
+		}
+	}
+	return path
+}
+
+func pathExists(p string) bool {
+	_, err := os.Stat(p)
+	return err == nil
 }
 
 // Load reads path on top of the defaults. A missing file is not an error.

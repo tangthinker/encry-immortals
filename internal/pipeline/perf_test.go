@@ -13,10 +13,10 @@ import (
 )
 
 // TestPerformanceBaseline is the spec 12.7 smoke measurement. It is opt-in
-// because it writes ~128 MiB: APEX_PERF_TEST=1 go test ./internal/pipeline -run TestPerformanceBaseline -v
+// because it writes ~128 MiB: EIMMORTAL_PERF_TEST=1 go test ./internal/pipeline -run TestPerformanceBaseline -v
 func TestPerformanceBaseline(t *testing.T) {
-	if os.Getenv("APEX_PERF_TEST") == "" {
-		t.Skip("set APEX_PERF_TEST=1 to run the performance baseline")
+	if os.Getenv("EIMMORTAL_PERF_TEST") == "" {
+		t.Skip("set EIMMORTAL_PERF_TEST=1 to run the performance baseline")
 	}
 	root := t.TempDir()
 	source := filepath.Join(root, "source")

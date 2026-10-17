@@ -7,11 +7,13 @@ package testhooks
 
 import "os"
 
-// Crash terminates the process with exit code 137 when APEX_TEST_CRASH_AT
+// Crash terminates the process with exit code 137 when EIMMORTAL_TEST_CRASH_AT
 // matches stage. It is a no-op otherwise.
 func Crash(stage string) {
-	if os.Getenv("APEX_TEST_CRASH_AT") == stage {
-		os.Exit(137)
+	for _, name := range []string{"EIMMORTAL_TEST_CRASH_AT", "APEX_TEST_CRASH_AT"} {
+		if os.Getenv(name) == stage {
+			os.Exit(137)
+		}
 	}
 }
 
@@ -19,4 +21,11 @@ func Crash(stage string) {
 func Enabled() bool { return true }
 
 // StageFromEnv reports the requested stage (test and diagnostics helper).
-func StageFromEnv() string { return os.Getenv("APEX_TEST_CRASH_AT") }
+func StageFromEnv() string {
+	for _, name := range []string{"EIMMORTAL_TEST_CRASH_AT", "APEX_TEST_CRASH_AT"} {
+		if v := os.Getenv(name); v != "" {
+			return v
+		}
+	}
+	return ""
+}

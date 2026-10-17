@@ -1,12 +1,12 @@
 GO ?= go
-BIN := bin/apex
+BIN := bin/eimmortal
 
 .PHONY: all build test test-race vet fmt golden fuzz crash-test scale-test clean
 
 all: build
 
 build:
-	$(GO) build -trimpath -o $(BIN) ./cmd/apex
+	$(GO) build -trimpath -o $(BIN) ./cmd/eimmortal
 
 test:
 	$(GO) test ./...
@@ -30,7 +30,7 @@ crash-test:
 
 # Chain-load scaling measurement (feeds the checkpoint decision, Q7).
 scale-test:
-	APEX_SCALE_TEST=1 $(GO) test ./internal/journal -run TestChainLoadScaling -v
+	EIMMORTAL_SCALE_TEST=1 $(GO) test ./internal/journal -run TestChainLoadScaling -v
 
 # Fuzz targets (12.4). Each target runs FUZZTIME (default 60s).
 fuzz:

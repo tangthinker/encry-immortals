@@ -8,7 +8,7 @@ import (
 )
 
 func TestRoundTripCompressible(t *testing.T) {
-	src := bytes.Repeat([]byte("apex journal line, repeated many times. "), 4000)
+	src := bytes.Repeat([]byte("eimmortal journal line, repeated many times. "), 4000)
 	id, out, err := Compress(src)
 	if err != nil {
 		t.Fatal(err)

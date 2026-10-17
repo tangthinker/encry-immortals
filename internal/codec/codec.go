@@ -1,4 +1,4 @@
-// Package codec is apex's single compression entry point (spec §3.4, D-11).
+// Package codec is eimmortal's single compression entry point (spec §3.4, D-11).
 //
 // Rules that the rest of the system relies on:
 //   - Compression always happens *before* encryption, never after.

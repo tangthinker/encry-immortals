@@ -61,7 +61,7 @@ func cmdDoctor(a *App, g *globalFlags, args []string) error {
 			if verr := layout.ValidateTopLevel(); verr != nil {
 				add("TargetDir 白名单", "FAIL", verr.Error())
 			} else {
-				add("TargetDir 白名单", "PASS", "只包含 .tmp/、.apex.lock、data/、meta/")
+				add("TargetDir 白名单", "PASS", "只包含 .tmp/、.eimmortal.lock、data/、meta/")
 			}
 			if verr := layout.ValidateStagingVolume(); verr != nil {
 				add("暂存区同卷", "FAIL", verr.Error())
@@ -140,7 +140,7 @@ func cmdDoctor(a *App, g *globalFlags, args []string) error {
 							if orphans == 0 {
 								add("孤儿 pack", "PASS", "0 个")
 							} else {
-								add("孤儿 pack", "WARN", fmt.Sprintf("%d 个（apex gc 可查看）", orphans))
+								add("孤儿 pack", "WARN", fmt.Sprintf("%d 个（eimmortal gc 可查看）", orphans))
 							}
 						}
 					}
@@ -361,7 +361,7 @@ func cmdVerify(a *App, g *globalFlags, args []string) error {
 		return apexerr.Newf(apexerr.CodeCorrupt, "有 %d 个 pack 大小与 journal 记录不符", len(sizeMismatch))
 	case len(sampleFailures) > 0 || len(deepFailures) > 0:
 		return apexerr.New(apexerr.CodeCorrupt, "完整性校验失败").
-			WithNext("用 apex verify --deep 定位损坏范围；必要时从其他副本恢复该 pack")
+			WithNext("用 eimmortal verify --deep 定位损坏范围；必要时从其他副本恢复该 pack")
 	}
 	return nil
 }
@@ -417,7 +417,7 @@ func cmdGC(a *App, g *globalFlags, args []string) error {
 		if !*yes {
 			return apexerr.New(apexerr.CodeUsage, "gc --prune-orphans 需要 --yes 二次确认").
 				WithScope("孤儿 pack 可能是尚未提交成功但仍有价值的数据").
-				WithNext("确认后执行 apex gc --prune-orphans --yes")
+				WithNext("确认后执行 eimmortal gc --prune-orphans --yes")
 		}
 		if !*dryRun {
 			for _, name := range orphans {

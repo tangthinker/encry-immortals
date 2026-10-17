@@ -221,7 +221,7 @@ func LoadMeta(dir string) (*Meta, error) {
 	if err != nil {
 		if os.IsNotExist(err) {
 			return nil, apexerr.Newf(apexerr.CodeUsage, "vault 未初始化：找不到 %s", path).
-				WithNext("先执行 apex init，或执行 apex init --join <TargetDir> 后 import-key")
+				WithNext("先执行 eimmortal init，或执行 eimmortal init --join <TargetDir> 后 import-key")
 		}
 		return nil, apexerr.Wrapf(err, apexerr.CodeUsage, "无法读取 %s", path)
 	}
@@ -229,7 +229,7 @@ func LoadMeta(dir string) (*Meta, error) {
 	if err != nil {
 		return nil, apexerr.New(apexerr.CodeUnlock, "无法解封 vault.meta：密码错误，或 vault.meta 已损坏").
 			WithScope("vault.meta 结构非法（" + err.Error() + "）").
-			WithNext("若刚更换过机器，请用 apex import-key 重新导入 Armor Key")
+			WithNext("若刚更换过机器，请用 eimmortal import-key 重新导入 Armor Key")
 	}
 	return m, nil
 }
@@ -286,7 +286,7 @@ func (m *Meta) Unlock(password []byte) (*Keys, error) {
 	keys, err := m.unlock(password)
 	if err != nil {
 		return nil, apexerr.New(apexerr.CodeUnlock, "无法解封 vault.meta：密码错误，或 vault.meta 已损坏").
-			WithNext("确认密码后重试；若刚更换过机器，请用 apex import-key 重新导入 Armor Key")
+			WithNext("确认密码后重试；若刚更换过机器，请用 eimmortal import-key 重新导入 Armor Key")
 	}
 	return keys, nil
 }

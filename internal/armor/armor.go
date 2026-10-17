@@ -1,6 +1,6 @@
 // Package armor implements the Armor Key encoding of spec §02.10 / D-16.
 //
-//	APEX-KEY-V2-<payload>
+//	EIMMORTAL-KEY-V2-<payload>
 //	payload = Crockford-Base32( zstd(vault.meta JSON) || CRC32C(zstd bytes) )
 //
 // Design goals: hand-copyable (no ambiguous letters, grouped, CRC-checked),
@@ -24,7 +24,7 @@ import (
 
 const (
 	// Prefix identifies the format version and makes the string searchable.
-	Prefix = "APEX-KEY-V2-"
+	Prefix = "EIMMORTAL-KEY-V2-"
 	// GroupSize is the human-facing grouping width (spec §07.3).
 	GroupSize = 5
 	// LineWidth is the print width for the grouped form.
@@ -32,6 +32,10 @@ const (
 	// MaxMetaBytes caps the decompressed vault.meta size (bomb protection).
 	MaxMetaBytes = 1 << 20
 )
+
+// LegacyPrefixes are still accepted on import so that keys exported before the
+// rename keep working. New exports always use Prefix.
+var LegacyPrefixes = []string{"APEX-KEY-V2-"}
 
 // Crockford Base32 alphabet: no I, L, O, U.
 const alphabet = "0123456789ABCDEFGHJKMNPQRSTVWXYZ"
@@ -139,11 +143,12 @@ func Seal(metaJSON []byte) (string, error) {
 // indistinguishable from the outside.
 func Open(encoded string) ([]byte, error) {
 	s := strings.TrimSpace(encoded)
-	if len(s) < len(Prefix) || !strings.EqualFold(s[:len(Prefix)], Prefix) {
+	payloadStr, ok := trimAnyPrefix(s)
+	if !ok {
 		return nil, apexerr.New(apexerr.CodeArmor, "Armor Key 无法识别：缺少 "+Prefix+" 前缀").
-			WithNext("确认粘贴完整，或重新执行 apex export-key")
+			WithNext("确认粘贴完整，或重新执行 eimmortal export-key")
 	}
-	payload, err := Decode(s[len(Prefix):])
+	payload, err := Decode(payloadStr)
 	if err != nil {
 		return nil, apexerr.New(apexerr.CodeArmor, "Armor Key 无法解码").
 			WithErr(err).
@@ -156,7 +161,7 @@ func Open(encoded string) ([]byte, error) {
 	want := binary.BigEndian.Uint32(payload[len(payload)-4:])
 	if got := crc32.Checksum(body, castagnoli); got != want {
 		return nil, apexerr.Newf(apexerr.CodeArmor, "Armor 字符串损坏（CRC 校验失败：期望 %08x，实际 %08x）", want, got).
-			WithNext("重新抄写或重新执行 apex export-key")
+			WithNext("重新抄写或重新执行 eimmortal export-key")
 	}
 	r, err := zstd.NewReader(bytes.NewReader(body),
 		zstd.WithDecoderMaxMemory(MaxMetaBytes),
@@ -180,10 +185,20 @@ func Open(encoded string) ([]byte, error) {
 // FormatSingle is the one-line form for password managers.
 func FormatSingle(encoded string) string { return encoded }
 
+// trimAnyPrefix strips the current or a legacy prefix (case-insensitive).
+func trimAnyPrefix(s string) (string, bool) {
+	for _, p := range append([]string{Prefix}, LegacyPrefixes...) {
+		if len(s) >= len(p) && strings.EqualFold(s[:len(p)], p) {
+			return s[len(p):], true
+		}
+	}
+	return "", false
+}
+
 // FormatGrouped is the hand-copy form: groups of GroupSize characters separated
 // by hyphens, wrapped at LineWidth columns.
 func FormatGrouped(encoded string) string {
-	payload := strings.TrimPrefix(encoded, Prefix)
+	payload, _ := trimAnyPrefix(encoded)
 	var groups []string
 	for i := 0; i < len(payload); i += GroupSize {
 		end := i + GroupSize

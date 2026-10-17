@@ -14,8 +14,8 @@ import (
 // It exists to answer a design question with numbers instead of intuition:
 // how expensive is "verify + replay every journal" as the vault grows?
 func TestChainLoadScaling(t *testing.T) {
-	if testing.Short() || os.Getenv("APEX_SCALE_TEST") == "" {
-		t.Skip("scaling measurement: run with APEX_SCALE_TEST=1 go test ./internal/journal -run TestChainLoadScaling -v")
+	if testing.Short() || os.Getenv("EIMMORTAL_SCALE_TEST") == "" {
+		t.Skip("scaling measurement: run with EIMMORTAL_SCALE_TEST=1 go test ./internal/journal -run TestChainLoadScaling -v")
 	}
 	cases := []struct {
 		journals int

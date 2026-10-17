@@ -62,7 +62,7 @@ func gv1() any {
 	packID := idBytes()
 	txnID := seqBytes(0x40, 16)
 	nonce := seqBytes(0x60, 24)
-	plain := []byte("apex golden slice payload")
+	plain := []byte("eimmortal golden slice payload")
 	env, err := wire.SealSliceWithNonce(key[:], codec.None, len(plain), plain, packID, 32, 0, txnID, nonce)
 	if err != nil {
 		fail(err)

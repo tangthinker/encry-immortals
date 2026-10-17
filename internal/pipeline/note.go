@@ -13,7 +13,7 @@ import (
 	"github.com/tangthinker/encry-immortals/internal/wire"
 )
 
-// NoteOptions drives "apex note" (spec 04.7: a kind=2 journal with no ops).
+// NoteOptions drives "eimmortal note" (spec 04.7: a kind=2 journal with no ops).
 type NoteOptions struct {
 	Layout  *store.Layout
 	Keys    *vault.Keys
@@ -31,7 +31,7 @@ func WriteNote(opts NoteOptions) (uint64, [32]byte, error) {
 		now = time.Now
 	}
 	if opts.Message == "" {
-		return 0, zero, apexerr.New(apexerr.CodeUsage, "apex note 需要一个非空的消息")
+		return 0, zero, apexerr.New(apexerr.CodeUsage, "eimmortal note 需要一个非空的消息")
 	}
 	chain, err := journal.Load(opts.Layout, opts.Keys.Sub.Journal.Bytes(), opts.Keys.VaultID[:], journal.LoadOptions{})
 	if err != nil {

@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strings"
 	"time"
 
 	"github.com/tangthinker/encry-immortals/internal/apexerr"
@@ -28,7 +29,14 @@ const (
 )
 
 // ProgressFileName is the resume marker inside the restore destination.
-const ProgressFileName = ".apex-restore-progress"
+const ProgressFileName = ".eimmortal-restore-progress"
+
+// Legacy names written by builds before the rename.
+const (
+	legacyProgressFileName  = ".apex-restore-progress"
+	restoreTempSuffix       = ".eimmortal-tmp"
+	legacyRestoreTempSuffix = ".apex-tmp"
+)
 
 // RestoreOptions drives one restore run.
 type RestoreOptions struct {
@@ -245,8 +253,12 @@ func (r *restoreRun) prepareDest(seq uint64) error {
 	}
 	foreign := 0
 	for _, e := range entries {
-		if e.Name() == ProgressFileName {
+		name := e.Name()
+		if name == ProgressFileName || name == legacyProgressFileName {
 			continue
+		}
+		if strings.HasSuffix(name, restoreTempSuffix) || strings.HasSuffix(name, legacyRestoreTempSuffix) {
+			continue // our own interrupted write, not user data
 		}
 		foreign++
 	}
@@ -263,9 +275,22 @@ func (r *restoreRun) prepareDest(seq uint64) error {
 	return nil
 }
 
+// progressPath returns the marker path, preferring the current name.
+func progressPath(destRoot string) string {
+	path := filepath.Join(destRoot, ProgressFileName)
+	if _, err := os.Stat(path); err == nil {
+		return path
+	}
+	legacy := filepath.Join(destRoot, legacyProgressFileName)
+	if _, err := os.Stat(legacy); err == nil {
+		return legacy
+	}
+	return path
+}
+
 // progressSeq reports the snapshot recorded in an existing progress marker.
 func progressSeq(destRoot string) (uint64, bool) {
-	raw, err := os.ReadFile(filepath.Join(destRoot, ProgressFileName))
+	raw, err := os.ReadFile(progressPath(destRoot))
 	if err != nil {
 		return 0, false
 	}
@@ -351,7 +376,7 @@ func (r *restoreRun) writeFile(n *journal.Node, dest string) error {
 	if err := os.MkdirAll(filepath.Dir(dest), 0o755); err != nil {
 		return apexerr.Wrapf(err, apexerr.CodeNoSpace, "无法创建父目录：%s", n.Path)
 	}
-	tmp := dest + ".apex-tmp"
+	tmp := dest + restoreTempSuffix
 	f, err := os.OpenFile(tmp, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0o600)
 	if err != nil {
 		return apexerr.Wrapf(err, apexerr.CodeNoSpace, "无法创建临时文件：%s", n.Path)
@@ -408,7 +433,7 @@ func (r *restoreRun) writeFile(n *journal.Node, dest string) error {
 		os.Remove(tmp)
 		return apexerr.Newf(apexerr.CodeCorrupt,
 			"还原出的内容 SHA-256 与 journal 记录不符：%s", n.Path).
-			WithNext("执行 apex verify --deep 定位损坏的 pack")
+			WithNext("执行 eimmortal verify --deep 定位损坏的 pack")
 	}
 	if err := os.Rename(tmp, dest); err != nil {
 		os.Remove(tmp)
@@ -485,7 +510,7 @@ func (r *restoreRun) applyModesAndTimes() error {
 	}
 	for _, it := range items {
 		if it.kind == journal.KindSymlink {
-			continue // chmod follows links; apex does not touch link targets
+			continue // chmod follows links; eimmortal does not touch link targets
 		}
 		mode := it.mode & 0o777
 		if r.opts.RestoreSUID {
@@ -534,7 +559,15 @@ type progressRecord struct {
 }
 
 func openProgress(destRoot string, seq uint64) (*progressLog, error) {
-	path := filepath.Join(destRoot, ProgressFileName)
+	// Upgrade an old marker name in place so resumes keep working.
+	legacy := filepath.Join(destRoot, legacyProgressFileName)
+	if _, err := os.Stat(legacy); err == nil {
+		newPath := filepath.Join(destRoot, ProgressFileName)
+		if _, err := os.Stat(newPath); os.IsNotExist(err) {
+			_ = os.Rename(legacy, newPath)
+		}
+	}
+	path := progressPath(destRoot)
 	p := &progressLog{path: path, done: make(map[string]bool)}
 	if raw, err := os.ReadFile(path); err == nil {
 		for _, line := range bytes.Split(raw, []byte("\n")) {
@@ -614,5 +647,6 @@ func (p *progressLog) finish() error {
 	if err := os.Remove(p.path); err != nil && !os.IsNotExist(err) {
 		return fmt.Errorf("无法删除续解进度文件：%w", err)
 	}
+	_ = os.Remove(filepath.Join(filepath.Dir(p.path), legacyProgressFileName))
 	return nil
 }

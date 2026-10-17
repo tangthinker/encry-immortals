@@ -120,7 +120,7 @@ func writeFile(t *testing.T, path string, data []byte, mode os.FileMode) {
 func TestBackupRestoreRoundTrip(t *testing.T) {
 	e := newEnv(t)
 	// Regular small file.
-	writeFile(t, filepath.Join(e.source, "a.txt"), []byte("hello apex"), 0o644)
+	writeFile(t, filepath.Join(e.source, "a.txt"), []byte("hello eimmortal"), 0o644)
 	// Empty file.
 	writeFile(t, filepath.Join(e.source, "empty.bin"), nil, 0o600)
 	// Large file: three slices at 64 KiB.

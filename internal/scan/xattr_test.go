@@ -18,7 +18,7 @@ func TestScanRejectsXattrsByDefault(t *testing.T) {
 	if err := os.WriteFile(path, []byte("x"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if err := unix.Setxattr(path, "com.apex.test", []byte("1"), 0); err != nil {
+	if err := unix.Setxattr(path, "com.eimmortal.test", []byte("1"), 0); err != nil {
 		t.Skipf("cannot set xattr on this filesystem: %v", err)
 	}
 	if _, err := Scan(Options{Root: root}); err == nil {

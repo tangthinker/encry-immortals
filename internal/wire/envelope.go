@@ -1,4 +1,4 @@
-// Package wire implements APEX's on-disk byte formats:
+// Package wire implements eimmortal's on-disk byte formats:
 // slice envelopes, pack headers/footers and journal bodies (spec 03 / 04).
 //
 // Everything in this package is byte-level and side-effect free; the storage
@@ -148,7 +148,7 @@ func OpenSlice(key, env, packID []byte, offset uint64, index uint32, txnID []byt
 	if err != nil {
 		return nil, 0, 0, corrupt("切片解密失败（MAC 校验不通过）").
 			WithErr(err).
-			WithNext("确认该 pack 未被云端截断或改写；必要时执行 apex verify --deep")
+			WithNext("确认该 pack 未被云端截断或改写；必要时执行 eimmortal verify --deep")
 	}
 	if int(h.PlainLen) > 0 && h.Codec == codec.Zstd {
 		// decompression is the caller's job; the declared length is returned

@@ -1,4 +1,4 @@
-// Command apex is the CLI entry point.
+// Command eimmortal is the CLI entry point.
 package main
 
 import (

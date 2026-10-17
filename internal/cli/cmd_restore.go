@@ -28,7 +28,7 @@ func cmdRestore(a *App, g *globalFlags, args []string) error {
 	}
 	dest := fs.Arg(0)
 	if dest == "" {
-		return apexerr.New(apexerr.CodeUsage, "用法：apex restore <DestDir> [--at <seq>]").
+		return apexerr.New(apexerr.CodeUsage, "用法：eimmortal restore <DestDir> [--at <seq>]").
 			WithNext("建议把 DestDir 指向一个空目录或尚不存在的目录")
 	}
 	s, err := a.openSession(g, true)
@@ -97,7 +97,7 @@ func cmdRestore(a *App, g *globalFlags, args []string) error {
 			msg += "\n  - " + p
 		}
 		return apexerr.New(apexerr.CodeCorrupt, msg).
-			WithNext("执行 apex verify --deep 定位损坏的 pack")
+			WithNext("执行 eimmortal verify --deep 定位损坏的 pack")
 	}
 	return nil
 }
@@ -173,7 +173,7 @@ func cmdCat(a *App, g *globalFlags, args []string) error {
 	}
 	target := fs.Arg(0)
 	if target == "" {
-		return apexerr.New(apexerr.CodeUsage, "用法：apex cat <path> [--at <seq>]")
+		return apexerr.New(apexerr.CodeUsage, "用法：eimmortal cat <path> [--at <seq>]")
 	}
 	s, err := a.openSession(g, true)
 	if err != nil {

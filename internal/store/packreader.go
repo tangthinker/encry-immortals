@@ -67,7 +67,7 @@ func (r *PackReader) Open(rel string, expectSize uint64) (*packHandle, error) {
 		if os.IsNotExist(err) {
 			return nil, apexerr.Newf(apexerr.CodeIncomplete, "pack 不存在：%s", rel).
 				WithScope("该文件可能尚未从云端同步下来").
-				WithNext("等待网盘同步完成后重试；必要时使用 apex restore --wait-for-packs")
+				WithNext("等待网盘同步完成后重试；必要时使用 eimmortal restore --wait-for-packs")
 		}
 		return nil, apexerr.Wrapf(err, apexerr.CodeInternal, "无法打开 pack：%s", rel)
 	}
@@ -103,11 +103,11 @@ func (r *PackReader) sizeMismatch(rel string, got int64, want uint64) error {
 	return apexerr.Newf(apexerr.CodeIncomplete,
 		"pack 大小与 journal 记录不一致：%s（实际 %d，期望 %d）", rel, got, want).
 		WithScope("pack 可能尚未同步完成，或已被云端截断").
-		WithNext("等待网盘同步完成后重试；若持续不一致，执行 apex verify --size")
+		WithNext("等待网盘同步完成后重试；若持续不一致，执行 eimmortal verify --size")
 }
 
 // OpenWithRetry retries a missing or size-mismatched pack for up to timeout,
-// which is the only place apex is allowed to wait for a cloud sync (spec 06.6).
+// which is the only place eimmortal is allowed to wait for a cloud sync (spec 06.6).
 func (r *PackReader) OpenWithRetry(rel string, expectSize uint64, timeout time.Duration, onWait func(name string)) (*packHandle, error) {
 	if timeout <= 0 {
 		return r.Open(rel, expectSize)
@@ -152,7 +152,7 @@ func (r *PackReader) ReadSlice(h *packHandle, ref wire.SliceRef, txnID [16]byte)
 	if err != nil {
 		return nil, apexerr.From(err).WithScope(
 			"data/" + h.rel + " 偏移 " + itoa(ref.Offset) + " 处的切片无法通过认证").
-			WithNext("执行 apex verify --deep 确认损坏范围")
+			WithNext("执行 eimmortal verify --deep 确认损坏范围")
 	}
 	if codecID != ref.Codec || plainLen != int(ref.PlainLen) {
 		return nil, apexerr.Newf(apexerr.CodeCorrupt,
@@ -170,7 +170,7 @@ func (r *PackReader) ReadSlice(h *packHandle, ref wire.SliceRef, txnID [16]byte)
 	if sum != ref.PlainSHA256 {
 		return nil, apexerr.Newf(apexerr.CodeCorrupt,
 			"切片明文 SHA-256 不符：%s@%d", h.rel, ref.Offset).
-			WithNext("执行 apex verify --deep 定位损坏的 pack")
+			WithNext("执行 eimmortal verify --deep 定位损坏的 pack")
 	}
 	return plain, nil
 }
@@ -201,7 +201,7 @@ func (r *PackReader) VerifyPack(ref wire.PackRef) error {
 	copy(sum[:], h.Sum(nil))
 	if sum != ref.SHA256 {
 		return apexerr.Newf(apexerr.CodeCorrupt, "pack SHA-256 不符：%s", ref.Name).
-			WithNext("执行 apex verify --deep 确认损坏范围")
+			WithNext("执行 eimmortal verify --deep 确认损坏范围")
 	}
 	return nil
 }

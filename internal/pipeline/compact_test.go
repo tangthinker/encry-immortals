@@ -265,7 +265,7 @@ func TestCompactAtSeqKeepsHistoryFile(t *testing.T) {
 }
 
 // TestCompactRecompressesAtHigherLevel shows how an existing vault gets smaller:
-// compact it again with a higher zstd level (apex compact --out ... --zstd-level 19).
+// compact it again with a higher zstd level (eimmortal compact --out ... --zstd-level 19).
 func TestCompactRecompressesAtHigherLevel(t *testing.T) {
 	e := newEnv(t)
 	e.cfg.Codec.ZstdLevel = 1

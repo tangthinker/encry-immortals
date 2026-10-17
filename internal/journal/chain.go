@@ -74,7 +74,7 @@ func Load(layout *store.Layout, journalKey, vaultID []byte, opts LoadOptions) (*
 			return nil, apexerr.Newf(apexerr.CodeChain,
 				"哈希链断裂：缺少 seq=%d 的 journal（现有下一个是 %d）", i+1, s).
 				WithScope("从该点之后的历史都不再可信").
-				WithNext("用 apex doctor --chain 定位；若确定是从云端丢失，只能恢复到 seq=" + itoa(uint64(i)))
+				WithNext("用 eimmortal doctor --chain 定位；若确定是从云端丢失，只能恢复到 seq=" + itoa(uint64(i)))
 		}
 	}
 
@@ -101,13 +101,13 @@ func Load(layout *store.Layout, journalKey, vaultID []byte, opts LoadOptions) (*
 		if j.Seq != seq {
 			return nil, apexerr.Newf(apexerr.CodeChain,
 				"%s 内部 seq=%d 与文件名不一致", rel, j.Seq).
-				WithNext("该 journal 可能被重命名或替换，执行 apex doctor --chain")
+				WithNext("该 journal 可能被重命名或替换，执行 eimmortal doctor --chain")
 		}
 		if j.PrevHash != prevHash {
 			return nil, apexerr.Newf(apexerr.CodeChain,
 				"哈希链断裂于 seq=%d：prev_hash 与前一个 journal 不匹配", seq).
 				WithScope("这通常意味着 seq=" + itoa(seq-1) + " 的 journal 被替换或损坏").
-				WithNext("执行 apex doctor --chain")
+				WithNext("执行 eimmortal doctor --chain")
 		}
 		chain.Files = append(chain.Files, &File{Seq: seq, RelPath: rel, Raw: raw, SHA256: sum, Body: j})
 		prevHash = sum

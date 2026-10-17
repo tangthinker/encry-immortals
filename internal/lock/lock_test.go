@@ -70,3 +70,28 @@ func TestTargetLockLifecycle(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+func TestLegacyTargetLockIsRespectedAndBreakable(t *testing.T) {
+	dir := t.TempDir()
+	legacy := filepath.Join(dir, LegacyTargetLockName)
+	if err := os.WriteFile(legacy, []byte(`{"host_id":"old-host"}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := AcquireTargetLock(dir, NewTargetInfo("new")); err == nil {
+		t.Fatal("a legacy .apex.lock must still block a new writer")
+	} else if apexerr.CodeOf(err) != apexerr.CodeLocked {
+		t.Fatalf("code = %s, want %s", apexerr.CodeOf(err), apexerr.CodeLocked)
+	}
+	if err := BreakTargetLock(dir); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(legacy); !os.IsNotExist(err) {
+		t.Fatal("break-lock must remove the legacy lock file")
+	}
+	lk, err := AcquireTargetLock(dir, NewTargetInfo("new"))
+	if err != nil {
+		t.Fatalf("acquire after break-lock: %v", err)
+	}
+	if err := lk.Release(); err != nil {
+		t.Fatal(err)
+	}
+}

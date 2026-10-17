@@ -2,6 +2,8 @@
 
 > 每条记录：时间 → 里程碑 → 做了什么 → 验证证据 → 遗留问题。
 > 记录规则见 [README.md](README.md)：命令与结果是**实际执行**的，未验证项必须标注。
+>
+> **名称说明**：2026-10-17 起工具名由 `apex` 改为 `eimmortal`（ADR-022）。本文件此前条目保留旧名，属历史记录。
 
 ## 开发环境说明（首个里程碑实测）
 
@@ -436,3 +438,40 @@ E13 pack 不存在：…（约 3 秒后返回，符合预期）
 
 - `apex compact --out <新目录> --zstd-level 19` 会把现有快照按指定级别**重新压缩**成一个新库（旧库不动）。实测把上面的 level-1 库（384 KiB）重压到 320 KiB（−17%），`diff -r` 与 `verify --deep` 均通过。
 - 新增 `TestCompactRecompressesAtHigherLevel`：同一份 spec 文本，level 1 → 58,388 B，level 19 → 49,655 B。
+---
+
+## 2026-10-17 · 工具更名为 `eimmortal`
+
+**Do**
+
+- 二进制与命令面：`cmd/apex` → `cmd/eimmortal`、`bin/eimmortal`、帮助/usage/所有错误提示中的命令名、`eimmortal version`。
+- 默认路径：`~/.config/eimmortal/config.toml`、`~/.config/eimmortal-vault`。
+- TargetDir 内：锁文件 `.eimmortal.lock`（旧 `.apex.lock` 仍被视为"正在写入"，`--break-lock` 同时清理并在白名单中接受）；restore 临时后缀 `.eimmortal-tmp`；续解进度 `.eimmortal-restore-progress`（读旧名并原地迁移）。
+- Armor Key 前缀：新导出 `EIMMORTAL-KEY-V2-`；`import-key` 同时接受旧的 `APEX-KEY-V2-`。
+- 环境变量：`EIMMORTAL_PASSWORD_FD`、`EIMMORTAL_TEST_CRASH_AT`（旧 `APEX_*` 回退）、`EIMMORTAL_SCALE_TEST`、`EIMMORTAL_PERF_TEST`。
+- **未改（协议层）**：HKDF info `apex-*-v2`、genesis `APEX-JOURNAL-GENESIS-v3`、`APEX_AEAD_VERIFY_OK`、journal body 版本、AAD 布局、pack/journal 命名。理由：改了会让已有库永久无法解密（ADR-022）。
+- Goldens：GV-4 的 prefix 字段更新；GV-1 的明文字符串随批量改名从 "apex golden slice payload" 变为 "eimmortal golden slice payload"（仅夹具文本，不涉及格式）；GV-2/3/5 未变（其固定密钥仍由原标签派生）。
+
+**Check（实际输出）**
+
+~~~text
+$ eimmortal help | head -2
+eimmortal 0.1.0-dev — 加密增量备份（网盘盲盒化）
+
+$ eimmortal init | grep KEY
+EIMMORTAL-KEY-V2-52TJZ…
+EIMMORTAL-KEY-V2-52TJZ-ZA403-…
+
+$ eimmortal backup --source … -m first
+已提交 seq=1 · ADD 1 …
+
+$ eimmortal restore <dest> && diff -r source <dest>
+DIFF OK
+
+$ # 把 Armor Key 前缀改回 APEX-KEY-V2- 后仍可导入
+$ eimmortal import-key --key-file legacy-armor.txt
+已导入 vault.meta（vault_id nY7jBv8G-iUeghnSSnEVSg）
+~~~
+
+- 新增兼容性测试：`TestOpenAcceptsLegacyPrefix`（旧 Armor 前缀）、`TestLegacyTargetLockIsRespectedAndBreakable`（旧锁阻塞 + break-lock 清理）、`TestLayoutAcceptsLegacyLockName`（白名单不误报污染）。
+- `go build ./...`、`go build -tags testhooks ./...`、`go test ./...`（16 包）全部通过。

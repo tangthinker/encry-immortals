@@ -2,6 +2,8 @@
 
 本目录记录**实现层**的决策、计划与执行日志。规范（什么 / 为什么 / 字节长什么样）在 [../spec/](../spec/)，母方案在 [../tech.md](../tech.md)。**三者的权威顺序：spec > 本目录 > 代码注释。**
 
+> **名称说明（2026-10-17）**：工具已由 `apex` 更名为 `eimmortal`（ADR-022）。本目录中较早的日志条目保留当时的旧名作为历史记录；协议常量（HKDF info、genesis、`APEX_AEAD_VERIFY_OK` 等）故意保持 `apex-*` 不变，它们属于线格式。
+
 ## 文件
 
 | 文件 | 内容 | 维护时机 |
@@ -21,7 +23,7 @@
 ## 代码布局
 
 ~~~text
-cmd/apex/                 CLI 入口
+cmd/eimmortal/                 CLI 入口
 internal/apexerr/         错误码 / 退出码（10.5 的稳定契约）
 internal/crypto/          口令派生、子密钥、AEAD、AAD 拼装（02 章）
 internal/armor/           Armor Key：Crockford Base32 + CRC32C（02 章 D-16）

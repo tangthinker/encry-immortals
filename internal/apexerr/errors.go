@@ -66,7 +66,7 @@ func ExitFor(c Code) int {
 	return ExitInternal
 }
 
-// Error is the only error type apex produces at package boundaries.
+// Error is the only error type eimmortal produces at package boundaries.
 //
 // Message shape (spec §10.7): "<code> <what>。影响：<scope>。建议：<next>（<cause>）"
 // with every optional part omitted when empty.

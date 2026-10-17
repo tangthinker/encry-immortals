@@ -1,14 +1,22 @@
-# apex（encry-immortals）
+# eimmortal（encry-immortals）
 
 **端到端加密的不可变追加式增量备份工具。** 面向"把备份丢进网盘，但完全不想让网盘看懂"这一场景。
 
 - **数据平面**（TargetDir）只有密文：`data/**/pack_<ts>_<rand>.dat`、`meta/<seq>.journal`，没有密钥、没有明文、没有可读元数据。
-- **控制平面**（`~/.config/apex-vault/`）保存 `vault.meta`、`state.db`，**绝不放进同步目录**。
+- **控制平面**（`~/.config/eimmortal-vault/`）保存 `vault.meta`、`state.db`，**绝不放进同步目录**。
 - **纯追加**：已写出的 pack 永不修改、永不删除；删除只在 journal 里留墓碑。网盘客户端永远只看到"新文件出现"。
 - **密码学**：Argon2id → HKDF-SHA256（4 把子密钥）→ XChaCha20-Poly1305；每个切片独立随机 nonce，AAD 绑定 pack_id/offset/index/txn_id/codec。
 - **可审计**：哈希链 + 本地锚点 + `verify` / `doctor` / 恢复演练。
 
 设计文档：母方案 [docs/tech.md](docs/tech.md)，实现规范 [docs/spec/](docs/spec/README.md)，开发记录 [docs/dev/](docs/dev/README.md)。
+
+> **名称变更（2026-10-17）**：工具由 `apex` 更名为 `eimmortal`。默认目录、锁文件名、Armor Key 前缀与环境变量同步改名；为不破坏已有数据，旧名称在**读取路径**上仍然兼容：
+> - Armor Key：新导出为 `EIMMORTAL-KEY-V2-…`，`import-key` 仍接受旧的 `APEX-KEY-V2-…`；
+> - 默认目录：`~/.config/eimmortal-vault`、`~/.config/eimmortal/config.toml`；若新路径不存在而旧路径存在，会自动沿用旧路径（也可用 `--vault/--config` 指定）；
+> - 锁文件：写 `.eimmortal.lock`，旧的 `.apex.lock` 仍被视为"正在写入"，`--break-lock` 会同时清理；
+> - 续解进度：读旧的 `.apex-restore-progress` 并自动迁移；
+> - 环境变量：`EIMMORTAL_PASSWORD_FD` / `EIMMORTAL_TEST_CRASH_AT`，旧的 `APEX_*` 仍作为回退；
+> - **线格式常量不变**：HKDF info（`apex-*-v2`）、genesis（`APEX-JOURNAL-GENESIS-v3`）、校验常量（`APEX_AEAD_VERIFY_OK`）、journal/pack 命名与 AAD 布局都保持原样——它们属于协议，改名会让已有库无法解密。
 
 ## 当前状态
 
@@ -26,12 +34,12 @@
 
 ```bash
 # 1. 构建
-make build            # 产物：bin/apex
+make build            # 产物：bin/eimmortal
 
-# 2. 配置（~/.config/apex/config.toml，权限 0600）
-cat > ~/.config/apex/config.toml <<'EOF'
+# 2. 配置（~/.config/eimmortal/config.toml，权限 0600）
+cat > ~/.config/eimmortal/config.toml <<'EOF'
 [storage]
-target_dir = "/Users/me/QuarkDrive/apex"
+target_dir = "/Users/me/QuarkDrive/eimmortal"
 
 [codec]
 zstd_level = 5            # 1..22：文本多可调到 9，压缩更小但更慢
@@ -40,40 +48,40 @@ min_compress_bytes = 4096 # 小于该值的切片不压缩
 [scan]
 exclude = [".git/**", "node_modules/**", "*.tmp", ".DS_Store"]
 EOF
-chmod 600 ~/.config/apex/config.toml
+chmod 600 ~/.config/eimmortal/config.toml
 
 # 3. 初始化（会打印 Armor Key，请存进密码管理器）
-apex init
+eimmortal init
 
 # 4. 备份 / 查看 / 还原
-apex backup --source ~/Documents -m "日常增量" --exclude '*.log'
-apex log
-apex status
-apex restore /tmp/restore-check --at-latest
+eimmortal backup --source ~/Documents -m "日常增量" --exclude '*.log'
+eimmortal log
+eimmortal status
+eimmortal restore /tmp/restore-check --at-latest
 
 # 5. 校验
-apex verify --deep
-apex doctor --chain            # 链、锚点、孤儿
-apex doctor --camouflage       # 伪装命名/文件头审计（06.7）
+eimmortal verify --deep
+eimmortal doctor --chain            # 链、锚点、孤儿
+eimmortal doctor --camouflage       # 伪装命名/文件头审计（06.7）
 
 # 云端还没同步完？只有 restore 允许等待
-apex restore /tmp/restore-check --wait-for-packs 5m
+eimmortal restore /tmp/restore-check --wait-for-packs 5m
 
 # 6. 回收已删除历史（旧库保持不动，验证后再手工删）
-apex compact --out /path/to/new-target
+eimmortal compact --out /path/to/new-target
 ```
 
 非交互（脚本 / CI）：
 
 ```bash
-printf '%s' "$APEX_PASSWORD" > /run/secrets/apex && chmod 600 /run/secrets/apex
-apex --password-file /run/secrets/apex backup --source /data --json
+printf '%s' "$EIMMORTAL_PASSWORD" > /run/secrets/eimmortal && chmod 600 /run/secrets/eimmortal
+eimmortal --password-file /run/secrets/eimmortal backup --source /data --json
 ```
 
 ## 文件布局
 
 ```text
-~/.config/apex-vault/        # 控制平面（0700）
+~/.config/eimmortal-vault/        # 控制平面（0700）
   vault.meta                 # salt / KDF 参数 / auth_verifier / vault_id
   state.db                   # 缓存：seq 水位、锚点、路径 HMAC 索引
   lock                       # flock
@@ -81,7 +89,7 @@ apex --password-file /run/secrets/apex backup --source /data --json
 
 <TargetDir>/                 # 数据平面（可放网盘）
   .tmp/                      # 同卷暂存区（原子换入）
-  .apex.lock                 # 跨机写者记录
+  .eimmortal.lock            # 跨机写者记录（旧版 .apex.lock 仍被识别）
   data/YYYY-MM/pack_*.dat    # 加密数据包（≤128 MiB）
   meta/00000001.journal      # 加密增量日志（哈希链）
 ```
@@ -91,7 +99,7 @@ apex --password-file /run/secrets/apex backup --source /data --json
 1. **主密码不可更改**。忘记 = 永久无法恢复；唯一补救是 `compact --new-identity` 重建全库。
 2. **Armor Key 与密码必须分开存放**，且都不要放进 TargetDir 或任何同步目录。
 3. **不做去重**：同一文件改一版就多占一份空间，这是不可变追加的固有代价。
-4. **单写者**：同一 TargetDir 只允许一个 apex 进程/主机写入（flock + `.apex.lock` + 严格 seq）。
+4. **单写者**：同一 TargetDir 只允许一个 eimmortal 进程/主机写入（flock + `.eimmortal.lock` + 严格 seq）。
 5. **不支持项 fail-fast**：硬链接、xattr/ACL（`com.apple.*`、`security.*` 等）、设备文件/FIFO/socket、非法 UTF-8 路径、超长路径、大小写折叠冲突都会直接报错（退出码 21）。xattr 可用 `scan.ignore_xattr = true` 显式降级；macOS 的 ACL 与资源分叉不在 xattr 接口内，属于已知缺口。
 6. **不看网盘状态**：程序无法感知同步是否完成；跨机恢复用 `verify --size` 确认 pack 齐了再 restore。
 
@@ -108,10 +116,10 @@ apex --password-file /run/secrets/apex backup --source /data --json
 
 - 已压缩数据（JPEG / MP4 / ZIP / 密文）会被 64 KiB 采样探测识别，直接以 `codec=none` 存储，不浪费 CPU。
 - 日志（journal）同样压缩；zstd 帧 CRC 已关闭——每个切片已有 Poly1305 与 `plain_sha256`，重复校验只增加字节与 CPU。
-- `apex backup` 会打印 `明文 → 落盘（比例）`，`--json` 中为 `plain_bytes` / `pack_bytes`。
-- `apex status --chain` 会给出 `Logical`（明文总量）与当前压缩比（`bytes.logical_source`）。
-- 临时覆盖：`apex backup --zstd-level 9`、`apex compact --zstd-level 19`。
-- **已有库想压缩得更小**：`apex compact --out <新目录> --zstd-level 19` 会按新级别重新打包整个快照（旧库不改动，验证后再删）。
+- `eimmortal backup` 会打印 `明文 → 落盘（比例）`，`--json` 中为 `plain_bytes` / `pack_bytes`。
+- `eimmortal status --chain` 会给出 `Logical`（明文总量）与当前压缩比（`bytes.logical_source`）。
+- 临时覆盖：`eimmortal backup --zstd-level 9`、`eimmortal compact --zstd-level 19`。
+- **已有库想压缩得更小**：`eimmortal compact --out <新目录> --zstd-level 19` 会按新级别重新打包整个快照（旧库不改动，验证后再删）。
 
 ## 性能（本机实测，128 MiB 不可压缩数据）
 
@@ -121,7 +129,7 @@ apex --password-file /run/secrets/apex backup --source /data --json
 | restore（全量） | ≈ 420 MiB/s |
 | 链加载（1000 次提交 / 1 万 op） | ≈ 57 ms |
 
-跑法：`APEX_PERF_TEST=1 go test ./internal/pipeline -run TestPerformanceBaseline -v`；规模测量：`make scale-test`。
+跑法：`EIMMORTAL_PERF_TEST=1 go test ./internal/pipeline -run TestPerformanceBaseline -v`；规模测量：`make scale-test`。
 
 ## 退出码（稳定契约）
 
@@ -140,7 +148,7 @@ apex --password-file /run/secrets/apex backup --source /data --json
 ## 开发
 
 ```bash
-make build     # 构建 bin/apex
+make build     # 构建 bin/eimmortal
 make test      # go test ./...
 make vet       # go vet ./...
 make fuzz      # 15s 级 fuzz（FUZZTIME 可覆盖）

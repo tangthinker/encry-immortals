@@ -28,7 +28,7 @@ func AcquireControl(dir string) (*ControlLock, error) {
 	}
 	if err := syscall.Flock(int(f.Fd()), syscall.LOCK_EX|syscall.LOCK_NB); err != nil {
 		f.Close()
-		return nil, apexerr.New(apexerr.CodeLocked, "另一个 apex 进程正在使用该 vault（flock 获取失败）").
+		return nil, apexerr.New(apexerr.CodeLocked, "另一个 eimmortal 进程正在使用该 vault（flock 获取失败）").
 			WithNext("等待该进程结束；若确认没有其他进程，检查 " + path)
 	}
 	return &ControlLock{f: f, path: path}, nil

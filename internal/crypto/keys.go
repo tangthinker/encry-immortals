@@ -1,4 +1,4 @@
-// Package vaultcrypto implements APEX's key hierarchy (spec docs/spec/02-crypto.md).
+// Package vaultcrypto implements eimmortal's key hierarchy (spec docs/spec/02-crypto.md).
 //
 // Chain: password --Argon2id(salt, t, m, p)--> MasterKey
 //
@@ -57,6 +57,10 @@ const (
 )
 
 // HKDF info strings (spec §02.2). Must stay byte-identical across versions.
+//
+// They intentionally keep the historical "apex-" prefix even after the tool was
+// renamed to eimmortal: they are wire constants, and changing them would derive
+// different keys for every existing vault (ADR-022).
 const (
 	HKDFInfoStorage = "apex-storage-payload-v2"
 	HKDFInfoJournal = "apex-journal-manifest-v2"
