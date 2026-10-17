@@ -98,3 +98,44 @@ export GOFLAGS=-mod=mod
 
 - 新增 ADR-011（64 MiB 线格式硬上限 vs 32 MiB 策略默认）、ADR-012（拒绝非规范 msgpack）、ADR-013（路径校验分两层）。
 - 遗留：`maxCompressedLen` 与 zstd worst-case 的实际对照留待 M8 的性能/边界复核。
+---
+
+## 2026-10-17 · M3 存储层 ✅
+
+**Plan**：目录布局与白名单、原子换入 + 目录 fsync、pack writer（rollover/footer）、reader（I7 校验）、三层锁、暂存区清扫、路径策略。
+
+**Do**
+
+- `internal/pathx`：NFC 归一化、拒绝 `..`/绝对/空段/非法 UTF-8/超长段、Windows 保留名、`SafeJoin`/`Contains`/`Overlap`、大小写折叠冲突检测。
+- `internal/store`：`Layout`（白名单校验、`data/YYYY-MM` 分片、pack/journal 命名与解析、暂存区同卷校验）、`RenameDurable`/`FsyncDir`/`CommitStaged`/`WriteFileDurable`、`SweepStaging`。
+- `internal/store/packwriter.go`：写前 rollover 决策、footer、fsync→rename→fsync(dir)、输出 `packs[]` 指纹（size/sha256/slice_count）。
+- `internal/store/packreader.go`：size 预校验（E13）、pack 头校验、seek 读信封、解密、解压、`plain_sha256` 复验（I7）、`VerifyPack`。
+- `internal/lock`：控制平面 flock（unix）与 O_EXCL 回退（windows）、`.apex.lock` JSON 持有者记录、`BreakTargetLock`。
+
+**Check（实际输出）**
+
+- `go test ./internal/store/... ./internal/lock/... ./internal/pathx/...` → 三个包全 `ok`（0.4 s 级）。
+- 负向用例：pack 大小不符 → `E13`；篡改密文 → `E12`；错误 txn_id → 解密失败；`SweepStaging` 只删 24h 前的残留；同进程二次加锁 → `E20`。
+
+---
+
+## 2026-10-17 · M4 vault 与 state.db ✅
+
+**Plan**：vault.meta v2 契约、KDF 校准与冻结、密码强度策略、Armor Key 导出/导入、RECOVERY.txt、state.db schema 与锚点。
+
+**Do**
+
+- `internal/vault`：`Meta`（Base64URL 显式编解码）、`NewMeta`/`ParseMeta`/`LoadMeta`/`Save`（0600 + 目录 0700 + 原子写）、`Unlock`（统一 E10）、`Calibrate`（可注入 Probe）、`CheckPassword`（长度/重复/纯数字/常见字典）、`Init` + `RECOVERY.txt`、`Armor`/`ParseArmorString`。
+- `internal/index`：modernc.org/sqlite（纯 Go，ADR-003），WAL + `synchronous=FULL`，5 张表 + vault_id/last_seq/演练/导出时间戳，`PutEntry`/`Entry`/`PutAnchor`/`LatestAnchor`/`LatestCheckpoint`/`ClearIndex`/`Reset`。
+
+**Check（实际输出）**
+
+- `go test ./internal/index/...` → `ok`（0.8 s）。
+- `go test ./internal/vault/...` → `ok`（0.8 s，含 2 次 128 MiB Argon2id 派生）。
+- I13 实测：写入明文路径的 HMAC 后，`state.db` 与 `state.db-wal` 中都不出现明文路径。
+- 校准决策表实测：1.5 s → 保持 256 MiB；快 → 翻倍到 512 MiB；慢 → 回退 128 MiB；极快 → 封顶 1 GiB。
+- 密码强度：`password`/`123456789012`/`aaaaaaaaaaaaaa` → weak；`correct horse battery staple` → 非 weak。
+
+**Act / 遗留**
+
+- 待用户决策：Q7 起新增（见 open-questions）。
