@@ -251,3 +251,52 @@ $ apex verify --sample 2        → 本地 2 / 引用 2 / 缺失 0；抽样 2 �
 
 - 结论修正：12.7 要求"1000 次提交 < 3 s"，当前**无 checkpoint 就已 < 0.1 s**；且 `prev_hash` 在密文内（04.2）使 checkpoint **无法**减少解密量，只能省 op 应用。
 - Q7 推荐从"扩 schema"改为"**暂不扩**（维持 v1 不生成 checkpoint），未来历史库过大时再按方案 A 一次做对"；ADR-015 补充实测数据。
+---
+
+## 2026-10-17 · M8 验收：崩溃注入矩阵 + 属性测试 ✅
+
+**Do**
+
+- `internal/testhooks`：`Crash(stage)` 只在 `-tags testhooks` 下编译出 `os.Exit(137)`；release 构建是内联空函数（满足 12.2"release 中不存在"）。
+- 注入点：K1 切片已写入未封包（`PackWriter.Append`）、K2 pack 刷盘后未 rename、K3 rename 后未 fsync 目录、K4 pack 发布后未写 journal、K5 journal 写入 `.tmp/` 后未 rename、K6 rename 后未 fsync、K7 journal 提交后未更新 state.db、K8 restore 写第一个文件后。
+- 为 K2/K3、K5/K6 把发布流程拆成显式步骤（禁用了"一次 CommitStaged"的黑盒），提升可测性。
+- `TestCrashInjectionMatrix`：用 `go build -tags testhooks` 构建真实二进制，逐阶段：注入崩溃（期望 137）→ `--break-lock` 恢复备份 → `doctor --chain` → restore → 与源树逐字节/mode/mtime 比对；K8 额外验证"中断后 `--overwrite if-changed` 续解"与进度文件删除。
+- `TestRandomTreeRoundTrip`（12.5 属性测试）：固定种子，12 步随机增/改/删 → 每次提交记录快照 → 最新与中间快照各还原一次，逐文件比对内容并断言"没有多余文件"。
+
+**Check（实际输出）**
+
+- `go test ./internal/pipeline -run TestCrashInjectionMatrix -v` → **K1–K8 全部 PASS**（总 2.96 s）。
+- `go test ./internal/pipeline -run TestRandomTreeRoundTrip -v` → PASS（0.18 s）。
+- `go build ./...` 与 `go build -tags testhooks ./...` 均通过（证明 release 版不含钩子也能编译）。
+
+---
+
+## 2026-10-17 · M9 之一：`compact`（空间回收）✅
+
+**Do**（ADR-019）
+
+- `pipeline.Compact`：加载旧链（可 `--at`）→ 空间预检（`statfs`）→ 新 TargetDir 必须为空 → 逐文件读旧切片（校验 AEAD + `plain_sha256`）→ 按当前配置重新压缩 → 新 pack → 写 seq=1 的 journal（MKDIR/ADD/SYMLINK + 全量 dirs）→ **重新加载新链逐切片自检** → 交付。
+- `--new-identity`：`--new-vault` + 新口令，走 `vault.Init`（新 salt/vault_id，KDF 重新校准），并把新 `state.db` 的锚点写成 seq=1；返回新 Armor Key。
+- 缺 pack：默认 `E13` 中止；`--accept-data-loss` 才跳过并在结果与退出码中列出。
+- CLI：`apex compact`，人类输出提示"旧库未改动 / 切换三步"。
+
+**Check（实际输出）**
+
+- `go test ./internal/pipeline -run TestCompact -v` → 5 个用例全 PASS：同身份重建（旧库 pack/journal 数不变）、新身份（新口令可解、旧口令被拒、新 state.db 有锚点）、缺 pack 的 strict/lossy 两条路径、非空输出目录拒绝 + dry-run 不落盘、`--at 1` 保留历史文件。
+- CLI 实测（真实二进制）：
+~~~text
+$ apex compact --out ... --dry-run   → dry-run：4 个文件 / 2 目录 / 1 链接，逻辑 200.0 KiB
+$ apex compact --out ...             → 已重建新库 seq=1 · 584 B in 1 packs · 用时 20ms
+$ apex log（新目录）                  → 00000001 commit ops=7 dirs=2 packs=1 compact from seq 3
+$ apex rebuild-state                 → entries=4 dirs=2 last_seq=1
+$ apex restore <dest>                → 文件 4 目录 2 链接 1 · 200.0 KiB
+$ diff -r source <dest>              → DIFF OK
+$ apex verify --deep                 → 缺失 0 / 大小不符 0 / 深度校验失败 0
+$ apex log（旧目录）                  → 仍是 3 条历史（旧库未被改动）
+~~~
+- `go test ./...`（17 个包）全绿，`go vet ./...` 无输出。
+
+**遗留**
+
+- 同身份 compact 后需要手工改配置 + `rebuild-state`（不自动改用户配置，见 ADR-019）。
+- 仍未做：xattr/ACL 检测（Q10）、30 min fuzz、跨平台 CI、12.7 性能基线（当前只有链加载的实测）。

@@ -18,8 +18,8 @@
 | `backup`（增量、读期一致性、dry-run、session 上限）、`note` | ✅ |
 | `restore`（快照穿梭 `--at`、覆盖策略、路径安全、断点续解） | ✅ |
 | `log` / `show` / `ls` / `cat` / `status` / `doctor` / `verify` / `gc` / `rebuild-state` | ✅ |
-| `compact`（重建回收已删除历史） | ⏳ 未实现（见 [open-questions Q9](docs/dev/open-questions.md)） |
-| checkpoint journal 生成 | ⏳ v1 不生成（规范对符号链接有缺口，见 Q7） |
+| `compact`（重建回收已删除历史，支持 `--new-identity`） | ✅ |
+| checkpoint journal 生成 | ⏳ v1 不生成（实测：1000 次提交链校验仅 57 ms；规范对符号链接有缺口，见 Q7） |
 | `watch` / `mount` / 改密码 / 去重 / eviction | ❌ 规范明确不做 |
 
 ## 快速开始
@@ -50,6 +50,9 @@ apex restore /tmp/restore-check --at-latest
 # 5. 校验
 apex verify --deep
 apex doctor --chain
+
+# 6. 回收已删除历史（旧库保持不动，验证后再手工删）
+apex compact --out /path/to/new-target
 ```
 
 非交互（脚本 / CI）：

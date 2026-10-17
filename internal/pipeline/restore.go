@@ -16,6 +16,7 @@ import (
 	"github.com/tangthinker/encry-immortals/internal/journal"
 	"github.com/tangthinker/encry-immortals/internal/pathx"
 	"github.com/tangthinker/encry-immortals/internal/store"
+	"github.com/tangthinker/encry-immortals/internal/testhooks"
 	"github.com/tangthinker/encry-immortals/internal/vault"
 )
 
@@ -167,6 +168,8 @@ func Restore(opts RestoreOptions) (*RestoreResult, error) {
 		}
 		res.Bytes += n.Size
 		run.markDone(n.Path)
+		// K8: crash after the first file landed, before the rest.
+		testhooks.Crash("K8")
 	}
 
 	// 3. symlinks last (never write through a link created earlier)

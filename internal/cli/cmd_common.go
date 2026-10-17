@@ -29,6 +29,7 @@ func registerAll() {
 	register(&command{name: "gc", summary: "清理 .tmp/ 残留、报告孤儿 pack（--prune-orphans --yes 删除）", writesTarget: true, run: cmdGC})
 	register(&command{name: "rebuild-state", summary: "从 journal 全量重建 state.db", run: cmdRebuildState})
 	register(&command{name: "note", summary: "写一条纯注释 journal（不含 ops）", writesTarget: true, run: cmdNote})
+	register(&command{name: "compact", summary: "重建一个只含当前快照的新库（--out，可 --new-identity）", writesTarget: true, run: cmdCompact})
 	register(&command{name: "version", summary: "打印版本号", run: cmdVersion})
 }
 

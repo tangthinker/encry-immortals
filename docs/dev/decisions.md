@@ -137,3 +137,16 @@
 - **决策**：比对 `(size, mtime_ns, ctime_ns, inode, dev)`；不一致时按 `on_change_during_read`（retry 3 次 / skip / fail）处理。重试产生的废弃切片留在 pack 内但不被 journal 引用——pack 的 footer 会记录它们，`verify` 不把它们当作文件内容。
 - **代价**：极端情况下浪费几十 MiB 云端空间（下次 `compact` 才会消失）。
 - **备选**：先在内存中完整读取再写（大文件内存翻倍，违反 5.5 的内存预算）。
+## ADR-019 compact 的形态：新目录 + 只重打包被引用的内容 + 自检后交付
+
+- **背景**：11.4 只有流程描述，没有接口细节；同时 `vault.meta` 不能进入 TargetDir（盲盒原则），所以"换身份"必然涉及两个目录。
+- **决策**：
+  - `apex compact --out <新 TargetDir> [--at <seq>] [--new-identity --new-vault <新控制平面>] [--dry-run] [--accept-data-loss]`。
+  - **同身份**（默认）：复用当前 `vault.meta` 与密钥，只重建数据目录；完成后提示用户改 `target_dir` 并执行 `rebuild-state`（不自动改 state.db，避免用户还没确认就把缓存指错）。
+  - **新身份**：要求 `--new-vault`，走一次 `vault.Init`（新 salt / vault_id / 口令，KDF 重新校准），并把新 `state.db` 的锚点直接写成 seq=1。
+  - **只写被引用的内容**：逐个文件读旧切片（校验 AEAD + `plain_sha256`）→ 按当前配置重新压缩 → 写入新 pack；跳过的只是已删除历史。
+  - **交付前自检**：重新加载新链，逐切片再解密校验，并比对每个文件的 `content_sha256`；自检失败即报错，绝不宣称成功。
+  - **绝不删除**旧库；缺 pack 时默认 `E13` 中止，`--accept-data-loss` 才跳过并列出清单。
+  - 写前检查 `statfs` 可用空间（unix），不足直接 `E14`。
+- **代价**：`--new-identity` 需要新密码 + 新控制平面目录；同身份 compact 后必须手工切换配置并 `rebuild-state`。
+- **备选**：原地重建（会破坏"旧库不动"的安全边界）；在 TargetDir 内放 `vault.meta`（违反盲盒原则）。

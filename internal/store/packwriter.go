@@ -10,6 +10,7 @@ import (
 
 	"github.com/tangthinker/encry-immortals/internal/apexerr"
 	vaultcrypto "github.com/tangthinker/encry-immortals/internal/crypto"
+	"github.com/tangthinker/encry-immortals/internal/testhooks"
 	"github.com/tangthinker/encry-immortals/internal/wire"
 )
 
@@ -105,6 +106,11 @@ func (w *PackWriter) Append(codecID byte, plainLen int, payload []byte, plainSHA
 		Index:       index,
 		Codec:       codecID,
 		PlainSHA256: plainSHA,
+	}
+	if len(w.cur.entries) == 0 {
+		// K1: crash while the first slice of a pack has been written but the
+		// pack is neither sealed nor published.
+		testhooks.Crash("K1")
 	}
 	w.cur.entries = append(w.cur.entries, wire.FooterEntry{
 		Offset: ref.Offset, EnvLen: ref.EnvLen, PlainLen: ref.PlainLen, Index: ref.Index,
@@ -223,7 +229,20 @@ func (w *PackWriter) sealCurrent() error {
 	if err := os.MkdirAll(filepath.Dir(finalPath), 0o755); err != nil {
 		return fail(apexerr.Wrapf(err, apexerr.CodeNoSpace, "无法创建 pack 分片目录：%s", filepath.Dir(finalPath)))
 	}
-	if err := CommitStaged(c.file, c.tmpPath, finalPath); err != nil {
+	// Publication is split into explicit steps so the crash matrix can stop
+	// between them (spec 05.1 S2/S3, 05.2 K2/K3).
+	if err := c.file.Sync(); err != nil {
+		return fail(apexerr.Wrapf(err, apexerr.CodeNoSpace, "刷盘 pack 失败：%s", c.tmpPath))
+	}
+	if err := c.file.Close(); err != nil {
+		return fail(apexerr.Wrapf(err, apexerr.CodeNoSpace, "关闭 pack 失败：%s", c.tmpPath))
+	}
+	testhooks.Crash("K2")
+	if err := os.Rename(c.tmpPath, finalPath); err != nil {
+		return fail(apexerr.Wrapf(err, apexerr.CodeNoSpace, "原子移动 pack 失败：%s", finalPath))
+	}
+	testhooks.Crash("K3")
+	if err := FsyncDir(filepath.Dir(finalPath)); err != nil {
 		return fail(err)
 	}
 	var sum [32]byte

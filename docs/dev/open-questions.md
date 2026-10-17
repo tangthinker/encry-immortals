@@ -67,11 +67,11 @@
 - **方案 C**：不记录（当前实现），restore 后根目录 mode 由 umask 决定。
 - **当前实现**：C，已在 README 的"已知限制"中间接体现。
 
-## Q9（P1）`compact` 的实现时机
+## Q9（P1）✅ 已解决：`compact` 已实现
 
-- **问题**：11.4 把 `compact` 定义为回收已删除历史的唯一出口；当前未实现，因此"删除文件后空间永久占用"在 v1 无法缓解。
-- **推荐**：作为下一个里程碑（M9）单独实现：读旧库 → 建新库（可 `--new-identity`）→ 只写仍被引用的切片 → 生成 seq=1 的 journal → 提示重新 export-key 与手工删旧库。
-- **状态**：待排期。
+- **结论**：`apex compact --out <新 TargetDir> [--at <seq>] [--new-identity --new-vault <dir>] [--dry-run] [--accept-data-loss]`，实现见 ADR-019。
+- **验证**：`TestCompact*` 5 个用例 + CLI 实测（dry-run → compact → 切换配置 → rebuild-state → restore → `diff -r` OK → `verify --deep` 0 失败 → 旧库未被改动）。
+- **遗留细节**：同身份 compact 后需手工改配置并 `rebuild-state`；若希望自动切换，请提出（会引入跨目录配置写入，风险是改错用户的配置）。
 
 ## Q10（P2）xattr / ACL 检测尚未实现
 

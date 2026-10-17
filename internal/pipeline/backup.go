@@ -19,6 +19,7 @@ import (
 	"github.com/tangthinker/encry-immortals/internal/pathx"
 	"github.com/tangthinker/encry-immortals/internal/scan"
 	"github.com/tangthinker/encry-immortals/internal/store"
+	"github.com/tangthinker/encry-immortals/internal/testhooks"
 	"github.com/tangthinker/encry-immortals/internal/vault"
 	"github.com/tangthinker/encry-immortals/internal/wire"
 )
@@ -220,6 +221,8 @@ func Backup(opts BackupOptions) (*BackupResult, error) {
 	if err != nil {
 		return nil, err
 	}
+	// K4: packs are durable and published, the journal has not been written.
+	testhooks.Crash("K4")
 	for _, p := range packs {
 		res.PackBytes += p.Size
 	}
@@ -230,6 +233,8 @@ func Backup(opts BackupOptions) (*BackupResult, error) {
 	if err != nil {
 		return nil, err
 	}
+	// K7: the journal is committed, state.db has not been updated yet.
+	testhooks.Crash("K7")
 	res.Seq = seq
 	res.Changed = true
 	res.JournalBytes = journalBytes
@@ -459,8 +464,7 @@ func (r *backupRun) commitJournal(chain *journal.Chain, diff *Diff, packs []wire
 		if err != nil {
 			return 0, zero, 0, err
 		}
-		if err := store.WriteFileDurableAs(r.opts.Layout.StagingDir,
-			r.opts.Layout.JournalName(j.Seq)+".tmp", abs, raw, 0o644); err != nil {
+		if err := r.writeJournalFile(j.Seq, abs, raw); err != nil {
 			return 0, zero, 0, err
 		}
 		prev = sha256.Sum256(raw)
@@ -537,4 +541,46 @@ func (r *backupRun) updateState(db *index.DB, diff *Diff, seq uint64, journalSHA
 func EstimateOps(d *Diff) string {
 	return fmt.Sprintf("ADD=%d MODIFY=%d DELETE=%d META=%d DIR=%d LINK=%d",
 		d.Stats.Added, d.Stats.Modified, d.Stats.Deleted, d.Stats.Meta, d.Stats.Dirs, d.Stats.Links)
+}
+
+// writeJournalFile publishes one journal with explicit, crash-testable steps
+// (spec 05.1 S5/S6, 05.2 K5/K6).
+func (r *backupRun) writeJournalFile(seq uint64, finalPath string, raw []byte) error {
+	stagingDir := r.opts.Layout.StagingDir
+	if err := os.MkdirAll(stagingDir, 0o755); err != nil {
+		return apexerr.Wrapf(err, apexerr.CodeNoSpace, "无法创建暂存目录：%s", stagingDir)
+	}
+	tmpPath := filepath.Join(stagingDir, r.opts.Layout.JournalName(seq)+".tmp")
+	f, err := os.OpenFile(tmpPath, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0o644)
+	if err != nil {
+		return apexerr.Wrapf(err, apexerr.CodeNoSpace, "无法创建暂存 journal：%s", tmpPath)
+	}
+	if _, err := f.Write(raw); err != nil {
+		f.Close()
+		os.Remove(tmpPath)
+		return apexerr.Wrapf(err, apexerr.CodeNoSpace, "写入暂存 journal 失败")
+	}
+	if err := f.Sync(); err != nil {
+		f.Close()
+		os.Remove(tmpPath)
+		return apexerr.Wrapf(err, apexerr.CodeNoSpace, "刷盘暂存 journal 失败")
+	}
+	if err := f.Close(); err != nil {
+		os.Remove(tmpPath)
+		return apexerr.Wrapf(err, apexerr.CodeNoSpace, "关闭暂存 journal 失败")
+	}
+	// K5: journal fully written to .tmp/, not yet renamed into meta/.
+	testhooks.Crash("K5")
+	if err := os.MkdirAll(filepath.Dir(finalPath), 0o755); err != nil {
+		return apexerr.Wrapf(err, apexerr.CodeNoSpace, "无法创建 meta 目录")
+	}
+	if err := os.Rename(tmpPath, finalPath); err != nil {
+		return apexerr.Wrapf(err, apexerr.CodeNoSpace, "原子移动 journal 失败：%s", finalPath)
+	}
+	// K6: journal renamed, parent directory not yet fsynced.
+	testhooks.Crash("K6")
+	if err := store.FsyncDir(filepath.Dir(finalPath)); err != nil {
+		return err
+	}
+	return nil
 }
