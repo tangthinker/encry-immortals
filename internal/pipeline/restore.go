@@ -101,7 +101,7 @@ func Restore(opts RestoreOptions) (*RestoreResult, error) {
 	}
 
 	if !opts.DryRun {
-		if err := run.prepareDest(); err != nil {
+		if err := run.prepareDest(chain.LastSeq); err != nil {
 			return nil, err
 		}
 		prog, err := openProgress(destRoot, chain.LastSeq)
@@ -138,12 +138,28 @@ func Restore(opts RestoreOptions) (*RestoreResult, error) {
 		if err != nil {
 			return nil, apexerr.Newf(apexerr.CodeCorrupt, "还原路径不安全：%s", n.Path).WithErr(err)
 		}
-		if run.prog != nil && run.prog.isDone(n.Path) {
-			continue
-		}
+		markedDone := run.prog != nil && run.prog.isDone(n.Path)
 		res.Files++
 		if opts.DryRun {
 			res.Bytes += n.Size
+			continue
+		}
+		if markedDone {
+			// A previous run claimed this file; verify before trusting it, because
+			// the rename is not fsynced and a crash can leave a truncated file.
+			if same, _ := fileMatches(dest, n); same {
+				continue
+			}
+			if werr := run.writeFile(n, dest); werr != nil {
+				if apexerr.CodeOf(werr) == apexerr.CodeIncomplete {
+					return nil, werr
+				}
+				res.Corrupt = append(res.Corrupt, n.Path)
+				run.logf("损坏，已跳过：%s（%v）", n.Path, werr)
+				continue
+			}
+			res.Bytes += n.Size
+			run.markDone(n.Path)
 			continue
 		}
 		write, skipped, derr := run.shouldWriteFile(dest, n)
@@ -208,7 +224,7 @@ func (r *restoreRun) logf(format string, args ...any) {
 	}
 }
 
-func (r *restoreRun) prepareDest() error {
+func (r *restoreRun) prepareDest(seq uint64) error {
 	info, err := os.Stat(r.destDir)
 	if os.IsNotExist(err) {
 		if err := os.MkdirAll(r.destDir, 0o755); err != nil {
@@ -234,11 +250,33 @@ func (r *restoreRun) prepareDest() error {
 		foreign++
 	}
 	if foreign > 0 && r.opts.Overwrite == OverwriteNever {
+		// A progress marker for the same snapshot means this directory is our own
+		// interrupted restore: resuming is expected (spec 05.6).
+		if markerSeq, ok := progressSeq(r.destDir); ok && markerSeq == seq {
+			return nil
+		}
 		return apexerr.Newf(apexerr.CodeUsage, "还原目标目录非空：%s", r.destDir).
 			WithScope("灾备场景下把数据混进已有目录极易造成误判").
 			WithNext("换一个空目录，或用 --overwrite if-changed/always 明确覆盖")
 	}
 	return nil
+}
+
+// progressSeq reports the snapshot recorded in an existing progress marker.
+func progressSeq(destRoot string) (uint64, bool) {
+	raw, err := os.ReadFile(filepath.Join(destRoot, ProgressFileName))
+	if err != nil {
+		return 0, false
+	}
+	line := raw
+	if i := bytes.IndexByte(line, '\n'); i >= 0 {
+		line = line[:i]
+	}
+	var rec progressRecord
+	if err := json.Unmarshal(line, &rec); err != nil || rec.Path != "" || rec.Seq == 0 {
+		return 0, false
+	}
+	return rec.Seq, true
 }
 
 func (r *restoreRun) markDone(path string) {
@@ -357,10 +395,8 @@ func (r *restoreRun) writeFile(n *journal.Node, dest string) error {
 		}
 		h.Write(plain)
 	}
-	if err := f.Sync(); err != nil {
-		cleanup()
-		return apexerr.Wrapf(err, apexerr.CodeNoSpace, "刷盘失败：%s", n.Path)
-	}
+	// No per-file fsync: the rename gives atomic visibility (spec 05.6) and a
+	// crash-truncated leftover is detected by the re-verification on resume.
 	if err := f.Close(); err != nil {
 		os.Remove(tmp)
 		return apexerr.Wrapf(err, apexerr.CodeNoSpace, "关闭失败：%s", n.Path)

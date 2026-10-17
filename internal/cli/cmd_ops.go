@@ -192,6 +192,7 @@ func lastOf(seqs []uint64) uint64 {
 func cmdVerify(a *App, g *globalFlags, args []string) error {
 	fs := flag.NewFlagSet("verify", flag.ContinueOnError)
 	fs.SetOutput(a.Stderr)
+	_ = fs.Bool("size", true, "校验 pack 大小与 journal 记录一致（默认开启，始终执行）")
 	sample := fs.Int("sample", 0, "随机抽样 N 个 pack 做整包 SHA-256 校验")
 	deep := fs.Bool("deep", false, "全量解密并逐切片校验（最慢，等价于不落盘的 restore）")
 	at := fs.Uint64("at", 0, "只校验到指定 seq")

@@ -321,3 +321,88 @@ func TestCLIInitCreatesVault(t *testing.T) {
 		t.Fatalf("RECOVERY.txt missing: %v", err)
 	}
 }
+
+// TestCLIDisasterRecoveryDrill walks the exact flow of spec 07.4: export the
+// Armor Key, simulate a new machine with a fresh control plane, import the key,
+// verify and restore.
+func TestCLIDisasterRecoveryDrill(t *testing.T) {
+	env := newCLIEnv(t)
+	env.writeSource(t)
+	if _, _, code := env.run(t, "backup", "--source", env.source, "-m", "before disaster"); code != 0 {
+		t.Fatal("seed backup failed")
+	}
+	out, _, code := env.run(t, "status", "--json")
+	if code != 0 {
+		t.Fatal("status failed")
+	}
+	var origStatus struct {
+		VaultID string `json:"vault_id"`
+	}
+	if err := json.Unmarshal([]byte(out), &origStatus); err != nil {
+		t.Fatal(err)
+	}
+
+	// 1. The operator saves the Armor Key somewhere outside the synced folder.
+	out, _, code = env.run(t, "export-key", "--json")
+	if code != 0 {
+		t.Fatal("export-key failed")
+	}
+	var armorDoc struct {
+		Armor string `json:"armor"`
+	}
+	if err := json.Unmarshal([]byte(out), &armorDoc); err != nil {
+		t.Fatal(err)
+	}
+	keyFile := filepath.Join(env.root, "armor.txt")
+	if err := os.WriteFile(keyFile, []byte(armorDoc.Armor), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	// 2. New machine: fresh control plane, the TargetDir came from the cloud.
+	newVault := filepath.Join(env.root, "vault-new-machine")
+	var outBuf, errBuf bytes.Buffer
+	app := &App{Stdin: os.Stdin}
+	app.Stdout = &outBuf
+	app.Stderr = &errBuf
+	run := func(args ...string) int {
+		outBuf.Reset()
+		errBuf.Reset()
+		full := append([]string{
+			"--config", env.cfgPath, "--vault", newVault, "--password-file", env.pwPath,
+		}, args...)
+		return app.Run(full)
+	}
+
+	if code := run("init", "--join", env.target); code != 0 {
+		t.Fatalf("init --join: exit=%d err=%s", code, errBuf.String())
+	}
+	if code := run("import-key", "--key-file", keyFile); code != 0 {
+		t.Fatalf("import-key: exit=%d err=%s", code, errBuf.String())
+	}
+	if code := run("status", "--json"); code != 0 {
+		t.Fatalf("status on the recovered vault: %s", errBuf.String())
+	}
+	var newStatus struct {
+		VaultID string `json:"vault_id"`
+	}
+	if err := json.Unmarshal(outBuf.Bytes(), &newStatus); err != nil {
+		t.Fatal(err)
+	}
+	if newStatus.VaultID != origStatus.VaultID {
+		t.Fatalf("vault_id changed across recovery: %s != %s", newStatus.VaultID, origStatus.VaultID)
+	}
+	if code := run("verify", "--size"); code != 0 {
+		t.Fatalf("verify --size: exit=%d err=%s", code, errBuf.String())
+	}
+	dest := filepath.Join(env.root, "dr-restored")
+	if code := run("restore", dest); code != 0 {
+		t.Fatalf("restore: exit=%d err=%s", code, errBuf.String())
+	}
+	got, err := os.ReadFile(filepath.Join(dest, "a.txt"))
+	if err != nil || string(got) != "hello apex" {
+		t.Fatalf("recovered content = %q, %v", got, err)
+	}
+	if link, err := os.Readlink(filepath.Join(dest, "link")); err != nil || link != "a.txt" {
+		t.Fatalf("recovered symlink = %q, %v", link, err)
+	}
+}

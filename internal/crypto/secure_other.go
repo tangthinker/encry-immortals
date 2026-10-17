@@ -1,8 +1,9 @@
-//go:build !unix
+//go:build !linux && !darwin
 
 package vaultcrypto
 
-// lockMemory is a no-op on platforms without mlock support in syscall.
+// lockMemory is unavailable here (syscall.Mlock is not portable to every
+// platform); keys still get deterministic zeroisation via SecureKey.Destroy.
 func lockMemory(b []byte) bool { return false }
 
 func unlockMemory(b []byte) {}

@@ -14,11 +14,3 @@ func sysInfo(fi os.FileInfo) (ino, dev, nlink uint64, blocks int64, ok bool) {
 	}
 	return uint64(st.Ino), uint64(st.Dev), uint64(st.Nlink), int64(st.Blocks), true
 }
-
-func ctime(fi os.FileInfo) int64 {
-	st, ok := fi.Sys().(*syscall.Stat_t)
-	if !ok {
-		return 0
-	}
-	return st.Ctimespec.Nano() + st.Ctimespec.Sec*1e9
-}

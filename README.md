@@ -87,6 +87,16 @@ apex --password-file /run/secrets/apex backup --source /data --json
 5. **不支持项 fail-fast**：硬链接、设备文件/FIFO/socket、非法 UTF-8 路径、超长路径、大小写折叠冲突会直接报错（退出码 21）。xattr/ACL 检测尚未实现（见 Q10）。
 6. **不看网盘状态**：程序无法感知同步是否完成；跨机恢复用 `verify --size` 确认 pack 齐了再 restore。
 
+## 性能（本机实测，128 MiB 不可压缩数据）
+
+| 场景 | 吞吐 |
+|---|---|
+| 增量 backup（新数据） | ≈ 280 MiB/s |
+| restore（全量） | ≈ 420 MiB/s |
+| 链加载（1000 次提交 / 1 万 op） | ≈ 57 ms |
+
+跑法：`APEX_PERF_TEST=1 go test ./internal/pipeline -run TestPerformanceBaseline -v`；规模测量：`make scale-test`。
+
 ## 退出码（稳定契约）
 
 | 码 | 含义 |

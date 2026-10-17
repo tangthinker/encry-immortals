@@ -175,8 +175,9 @@ func TestCrashInjectionMatrix(t *testing.T) {
 		if code != 137 {
 			t.Fatalf("K8 crash: exit=%d out=%s", code, out)
 		}
-		// Resume must work with --overwrite=if-changed (spec 05.6).
-		out, code = e.run(t, nil, "restore", dest, "--overwrite", "if-changed")
+		// Resume must work with the default overwrite policy: the progress log
+		// marks a file, but the resume path re-verifies it before trusting it.
+		out, code = e.run(t, nil, "restore", dest)
 		if code != 0 {
 			t.Fatalf("resume restore: exit=%d out=%s", code, out)
 		}

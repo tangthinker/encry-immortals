@@ -300,3 +300,38 @@ $ apex log（旧目录）                  → 仍是 3 条历史（旧库未被
 
 - 同身份 compact 后需要手工改配置 + `rebuild-state`（不自动改用户配置，见 ADR-019）。
 - 仍未做：xattr/ACL 检测（Q10）、30 min fuzz、跨平台 CI、12.7 性能基线（当前只有链加载的实测）。
+---
+
+## 2026-10-17 · M8/M9 收尾：跨平台编译、灾难恢复演练、性能基线、fuzz
+
+**Do**
+
+- **跨平台编译**：修复三处平台相关代码——`ctime`（darwin `Ctimespec` / linux-freesbd `Ctim` / 其他 unix 回退 0）、`mlock`（仅 linux+darwin 有 `syscall.Mlock`，其余平台退回"只清零"）、`Statfs` 字段差异（linux/darwin/freebsd 用 `Bavail`，其他 unix 返回"未知"）。
+- **灾难恢复演练**：`TestCLIDisasterRecoveryDrill` 走完 07.4 全流程：`export-key` → 新控制平面 `init --join <TargetDir>` → `import-key` → `status`（vault_id 与旧机一致）→ `verify --size` → `restore` → 内容与符号链接校验。
+- **性能基线**（`APEX_PERF_TEST=1`，128 MiB 伪随机不可压缩数据，8 MiB 切片 / 128 MiB pack）：
+
+| 指标 | 实测 | 12.7 目标 | 结论 |
+|---|---|---|---|
+| 增量 backup（128 MiB 新数据） | **280 MiB/s** | > 200 MB/s | 达标 |
+| restore（全量 128 MiB） | **418 MiB/s** | > 300 MB/s | 达标 |
+| 链加载（1 次提交） | < 1 ms | < 3 s（1000 次提交） | 达标（见 Q7 的规模测量） |
+
+- 为达到 restore 目标：去掉每文件 `f.Sync()`（ADR-020），并把"续解时对已标记文件重新校验、不一致即重写"补上。
+- 新增 `verify --size` flag（与 10.1/6.4 的写法对齐；size 校验本来就总是执行）。
+- **fuzz 2 分钟 × 3 目标**：FuzzSliceEnvelope 46,239,455 execs、FuzzJournalDecode 49,593,789 execs、FuzzOpenJournalFile 15,289,612 execs，全部 PASS，无 panic / OOM。
+
+**Check（实际输出）**
+
+~~~text
+GOOS/GOARCH 编译矩阵：
+linux/amd64 OK   linux/arm64 OK   windows/amd64 OK
+darwin/arm64 OK  darwin/amd64 OK  freebsd/amd64 OK  openbsd/amd64 OK
+go test ./...  → 16 个包全 ok（cli 10.7 s 含 DR 演练；pipeline 6.1 s 含崩溃矩阵）
+go vet ./...   → 无输出
+~~~
+
+**遗留**
+
+- xattr/ACL 检测仍未实现（Q10）。
+- 30 min fuzz 与三平台 **运行时** CI 未做（编译矩阵已覆盖）。
+- 12.8 第 9 条"恶意输入审计"目前由 wire 的单测 + fuzz 覆盖，尚未形成 20 条手工样例清单。
