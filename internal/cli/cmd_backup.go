@@ -111,7 +111,7 @@ func cmdBackup(a *App, g *globalFlags, args []string) error {
 func cmdNote(a *App, g *globalFlags, args []string) error {
 	fs := flag.NewFlagSet("note", flag.ContinueOnError)
 	fs.SetOutput(a.Stderr)
-	if err := fs.Parse(args); err != nil {
+	if err := parseInterspersed(fs, args); err != nil {
 		return apexerr.Wrap(err, apexerr.CodeUsage, "参数错误")
 	}
 	message := fs.Arg(0)

@@ -35,7 +35,7 @@ func kindName(k uint8) string {
 func cmdLog(a *App, g *globalFlags, args []string) error {
 	fs := flag.NewFlagSet("log", flag.ContinueOnError)
 	fs.SetOutput(a.Stderr)
-	if err := fs.Parse(args); err != nil {
+	if err := parseInterspersed(fs, args); err != nil {
 		return apexerr.Wrap(err, apexerr.CodeUsage, "参数错误")
 	}
 	s, err := a.openSession(g, true)
@@ -84,7 +84,7 @@ func cmdLog(a *App, g *globalFlags, args []string) error {
 func cmdShow(a *App, g *globalFlags, args []string) error {
 	fs := flag.NewFlagSet("show", flag.ContinueOnError)
 	fs.SetOutput(a.Stderr)
-	if err := fs.Parse(args); err != nil {
+	if err := parseInterspersed(fs, args); err != nil {
 		return apexerr.Wrap(err, apexerr.CodeUsage, "参数错误")
 	}
 	rawSeq := fs.Arg(0)

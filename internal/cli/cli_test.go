@@ -173,6 +173,42 @@ func TestCLIBackupRestoreFlow(t *testing.T) {
 	}
 }
 
+func TestCLISnapshotTravelWithTrailingFlags(t *testing.T) {
+	env := newCLIEnv(t)
+	env.writeSource(t)
+	if _, _, code := env.run(t, "backup", "--source", env.source); code != 0 {
+		t.Fatal("backup 1 failed")
+	}
+	if err := os.WriteFile(filepath.Join(env.source, "a.txt"), []byte("v2 content"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, code := env.run(t, "backup", "--source", env.source); code != 0 {
+		t.Fatal("backup 2 failed")
+	}
+
+	// Flags after the positional argument must still be honoured.
+	out, _, code := env.run(t, "cat", "a.txt", "--at", "1")
+	if code != 0 {
+		t.Fatalf("cat --at exit = %d", code)
+	}
+	if out != "hello apex" {
+		t.Fatalf("cat --at 1 = %q, want the seq=1 content", out)
+	}
+	out, _, code = env.run(t, "cat", "a.txt", "--at", "2")
+	if code != 0 || out != "v2 content" {
+		t.Fatalf("cat --at 2 = %q (exit %d)", out, code)
+	}
+
+	dest := filepath.Join(env.root, "at1")
+	if _, _, code := env.run(t, "restore", dest, "--at", "1"); code != 0 {
+		t.Fatalf("restore --at exit = %d", code)
+	}
+	got, err := os.ReadFile(filepath.Join(dest, "a.txt"))
+	if err != nil || string(got) != "hello apex" {
+		t.Fatalf("restore --at 1 content = %q, %v", got, err)
+	}
+}
+
 func TestCLIExitCodes(t *testing.T) {
 	env := newCLIEnv(t)
 	if _, _, code := env.run(t, "no-such-command"); code != apexerr.ExitUsage {

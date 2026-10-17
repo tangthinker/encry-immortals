@@ -2,6 +2,7 @@ package cli
 
 import (
 	"encoding/hex"
+	"flag"
 	"fmt"
 	"os"
 	"strconv"
@@ -91,3 +92,35 @@ func homeDirForDisplay(p string) string {
 
 // nowUnix is the single clock entry point for CLI-driven sweeps.
 func nowUnix() int64 { return time.Now().Unix() }
+
+// parseInterspersed parses flags that may appear before, after or between
+// positional arguments (spec 10.1 writes "restore <DestDir> --at <seq>").
+// The standard flag package stops at the first positional, so we reorder.
+func parseInterspersed(fs *flag.FlagSet, args []string) error {
+	flags := make([]string, 0, len(args))
+	positional := make([]string, 0, len(args))
+	for i := 0; i < len(args); i++ {
+		a := args[i]
+		if len(a) < 2 || a[0] != '-' || a == "--" {
+			positional = append(positional, a)
+			continue
+		}
+		flags = append(flags, a)
+		name := strings.TrimLeft(a, "-")
+		if eq := strings.IndexByte(name, '='); eq >= 0 {
+			continue // value is inline
+		}
+		f := fs.Lookup(name)
+		if f == nil {
+			continue // unknown flag: let Parse report it
+		}
+		if bf, ok := f.Value.(interface{ IsBoolFlag() bool }); ok && bf.IsBoolFlag() {
+			continue
+		}
+		if i+1 < len(args) {
+			i++
+			flags = append(flags, args[i])
+		}
+	}
+	return fs.Parse(append(flags, positional...))
+}

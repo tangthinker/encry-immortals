@@ -193,3 +193,35 @@ $ apex ls                       → 列出 0644/0640/0755、大小、link -> a.t
 
 - `compact` 未实现（Q9）；checkpoint 未生成（Q7）；xattr/ACL 未检测（Q10）；`status` 的 referenced/orphan/missing 需 `doctor --chain` 补（Q11）。
 - 下一步（M8/M9）：`APEX_TEST_CRASH_AT` 真实 kill 注入（K1–K7 全矩阵 ×20）、属性测试（随机树 × checkpoint 间隔）、fuzz 30 min、compact、跨平台构建验证。
+---
+
+## 2026-10-17 · M7 补充：命令面实测与修复
+
+**实测发现的缺陷（已修）**
+
+1. **位置参数之后的 flag 被忽略**：Go 标准库 `flag` 在遇到第一个非 flag 参数后停止解析，导致 spec 10.1 的写法 `apex restore <DestDir> --at <seq>`、`apex cat <path> --at <seq>` 静默失效（`--at` 被当成位置参数丢弃）。
+   - 修复：`parseInterspersed` 先把已知 flag（含 `--k=v`、布尔 flag、未知 flag）搬到前面再解析；restore/ls/cat/show/note 全部改用它。
+   - 回归测试：`TestCLISnapshotTravelWithTrailingFlags`（两次提交后 `cat a.txt --at 1` 必须返回旧内容、`restore dest --at 1` 必须还原旧内容）。
+2. **META op 覆盖 state.db 的内容哈希**：META 只带 mode/mtime，原实现把 `content_sha256` 写成全零。修复：先读旧行并保留 hash/ctime。影响面仅限缓存质量，但会污染未来的 hash 加速路径。
+
+**实测通过的场景（真实二进制 + 真实文件系统）**
+
+~~~text
+$ apex backup --source ... -m "second commit" --exclude '*.skip'
+已提交 seq=2 · ADD 1 MODIFY 1 DELETE 1 META 0 DIR 2 LINK 0
+$ apex note "手动注释一次"      → 已写入注释 journal seq=3
+$ apex show 2                   → DELETE sub/b.txt / MKDIR newdir / MODIFY a.txt / ADD newdir/c.txt
+$ apex cat a.txt --at 1         → hello apex          （修复前返回最新内容）
+$ apex restore <dest> --at 1    → 旧快照正确
+$ apex gc                       → 暂存区 0 / 孤儿 0
+$ apex rebuild-state            → entries=4 dirs=2 last_seq=3
+$ apex doctor --chain           → 9 项全 PASS（链 3 个 journal、锚点一致、无孤儿）
+$ apex status --json            → schema=1、last_seq=3、anchor_short=1151-F618
+$ apex verify --sample 2        → 本地 2 / 引用 2 / 缺失 0；抽样 2 个 pack 全通过
+~~~
+
+**Check（实际输出）**
+
+- `go test ./...` → 16 个包全 `ok`（cli 3.0 s、pipeline 0.86 s，其余 ≤ 0.8 s）。
+- `go vet ./...` → 无输出。
+- `apex backup --exclude` 新增可重复 flag；`Makefile` 的 gofmt 范围收敛到 `./cmd ./internal ./tools`（避免扫到 `.cache/gomod`）。

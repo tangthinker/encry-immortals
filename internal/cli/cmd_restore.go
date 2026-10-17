@@ -20,7 +20,7 @@ func cmdRestore(a *App, g *globalFlags, args []string) error {
 	allowExternal := fs.Bool("allow-external-symlink", false, "允许还原指向绝对路径的符号链接")
 	restoreSUID := fs.Bool("restore-suid", false, "还原 setuid/setgid 位")
 	dryRun := fs.Bool("dry-run", false, "只统计不写盘")
-	if err := fs.Parse(args); err != nil {
+	if err := parseInterspersed(fs, args); err != nil {
 		return apexerr.Wrap(err, apexerr.CodeUsage, "参数错误")
 	}
 	dest := fs.Arg(0)
@@ -98,7 +98,7 @@ func cmdLs(a *App, g *globalFlags, args []string) error {
 	fs := flag.NewFlagSet("ls", flag.ContinueOnError)
 	fs.SetOutput(a.Stderr)
 	at := fs.Uint64("at", 0, "以指定 seq 的视角列出")
-	if err := fs.Parse(args); err != nil {
+	if err := parseInterspersed(fs, args); err != nil {
 		return apexerr.Wrap(err, apexerr.CodeUsage, "参数错误")
 	}
 	prefix := fs.Arg(0)
@@ -160,7 +160,7 @@ func cmdCat(a *App, g *globalFlags, args []string) error {
 	fs := flag.NewFlagSet("cat", flag.ContinueOnError)
 	fs.SetOutput(a.Stderr)
 	at := fs.Uint64("at", 0, "读取指定 seq 的版本")
-	if err := fs.Parse(args); err != nil {
+	if err := parseInterspersed(fs, args); err != nil {
 		return apexerr.Wrap(err, apexerr.CodeUsage, "参数错误")
 	}
 	target := fs.Arg(0)
