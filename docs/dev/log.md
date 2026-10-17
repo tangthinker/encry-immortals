@@ -421,3 +421,14 @@ E13 pack 不存在：…（约 3 秒后返回，符合预期）
 - `go test ./internal/codec -bench BenchmarkCompressLevels` →
   level1 7,087 MB/s · level3 8,486 MB/s · level5 4,839 MB/s · level9 8,889 MB/s · level19 681 MB/s（1 MiB 高重复度内存样本，仅作相对参考）。
 - `go test ./...` 16 包全绿。
+**补充（压缩可视化）**
+
+- `apex status --chain` 现在计算 `Logical`（快照里所有文件的明文总大小）并给出"落盘/明文"比例；JSON 的 `bytes.logical_source` 不再是 0。
+- 真实语料实测（962 MiB 级文本：spec 文档 ×4 + 全仓 Go 源码）：
+
+| 级别 | backup 用时 | 落盘 | 压缩比 |
+|---|---|---|---|
+| 1 | 23 ms | 382.2 KiB | 40% |
+| 19 | 50 ms | 316.8 KiB | **33%** |
+
+- `apex status --chain` 输出：`Logical 962.2 KiB（落盘/明文 33%）`；`verify --deep` 与 `diff -r` 均通过（level 19 的还原正确）。

@@ -109,6 +109,7 @@ apex --password-file /run/secrets/apex backup --source /data --json
 - 已压缩数据（JPEG / MP4 / ZIP / 密文）会被 64 KiB 采样探测识别，直接以 `codec=none` 存储，不浪费 CPU。
 - 日志（journal）同样压缩；zstd 帧 CRC 已关闭——每个切片已有 Poly1305 与 `plain_sha256`，重复校验只增加字节与 CPU。
 - `apex backup` 会打印 `明文 → 落盘（比例）`，`--json` 中为 `plain_bytes` / `pack_bytes`。
+- `apex status --chain` 会给出 `Logical`（明文总量）与当前压缩比（`bytes.logical_source`）。
 - 临时覆盖：`apex backup --zstd-level 9`、`apex compact --zstd-level 19`。
 
 ## 性能（本机实测，128 MiB 不可压缩数据）

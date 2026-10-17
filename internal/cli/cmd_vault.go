@@ -287,6 +287,7 @@ func cmdStatus(a *App, g *globalFlags, args []string) error {
 	}
 
 	referencedCount, orphanCount, missingCount := 0, 0, 0
+	var logicalSource int64
 	if *checkChain && layout != nil {
 		if pw, perr := a.password(g, "请输入主密码：", false); perr != nil {
 			warnings = append(warnings, "未能取得主密码，packs.referenced/orphan/missing 未计算")
@@ -304,6 +305,9 @@ func cmdStatus(a *App, g *globalFlags, args []string) error {
 					localSet := make(map[string]bool, len(packs))
 					for _, name := range packs {
 						localSet[name] = true
+					}
+					for _, n := range chain.Tree.Files() {
+						logicalSource += int64(n.Size)
 					}
 					for name := range chain.Tree.Packs {
 						referencedCount++
@@ -361,7 +365,10 @@ func cmdStatus(a *App, g *globalFlags, args []string) error {
 			Local: len(packs), Referenced: referencedCount,
 			Orphan: orphanCount, Missing: missingCount,
 		},
-		Bytes:      bytesJSON{PackTotal: packBytes, JournalTotal: journalBytes, Staging: stagingBytes},
+		Bytes: bytesJSON{
+			PackTotal: packBytes, JournalTotal: journalBytes,
+			Staging: stagingBytes, Logical: logicalSource,
+		},
 		TmpEntries: len(stagingEntries),
 		Warnings:   warnings,
 	}
@@ -383,6 +390,10 @@ func cmdStatus(a *App, g *globalFlags, args []string) error {
 		}
 		fmt.Fprintf(w, "Journals     %s in %d files\n", humanBytes(journalBytes), len(journals))
 		fmt.Fprintf(w, "Staging      %s in %d entries\n", humanBytes(stagingBytes), len(stagingEntries))
+		if logicalSource > 0 && packBytes > 0 {
+			fmt.Fprintf(w, "Logical      %s（落盘/明文 %.0f%%）\n",
+				humanBytes(logicalSource), 100*float64(packBytes)/float64(logicalSource))
+		}
 		fmt.Fprintf(w, "Health       %s\n", strings.Join(append([]string{anchorHealth(verified, hasAnchor)}, warnings...), " · "))
 		fmt.Fprintln(s.stderr, "提示：主密码不可更改；请确认 Armor Key 已异地保存，并定期做恢复演练。")
 	})

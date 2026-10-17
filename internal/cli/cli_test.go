@@ -424,12 +424,18 @@ func TestCLIStatusChainAndWaitForPacks(t *testing.T) {
 			Orphan     int `json:"orphan"`
 			Missing    int `json:"missing"`
 		} `json:"packs"`
+		Bytes struct {
+			Logical int64 `json:"logical_source"`
+		} `json:"bytes"`
 	}
 	if err := json.Unmarshal([]byte(out), &doc); err != nil {
 		t.Fatalf("status --chain --json invalid: %v", err)
 	}
 	if doc.Packs.Local != 1 || doc.Packs.Referenced != 1 || doc.Packs.Missing != 0 || doc.Packs.Orphan != 0 {
 		t.Fatalf("unexpected pack statistics: %+v", doc.Packs)
+	}
+	if doc.Bytes.Logical <= 0 {
+		t.Fatalf("logical_source not computed: %+v", doc.Bytes)
 	}
 
 	// Remove the only pack: restore must wait, then fail with E13 (13).
