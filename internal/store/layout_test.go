@@ -31,6 +31,13 @@ func TestLayoutEnsureAndWhitelist(t *testing.T) {
 	if err := l.ValidateTopLevel(); err != nil {
 		t.Fatalf("clean target rejected: %v", err)
 	}
+	// macOS Finder creates .DS_Store without asking; it is not pollution.
+	if err := os.WriteFile(filepath.Join(l.TargetDir, FinderMetadataFileName), []byte("finder"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := l.ValidateTopLevel(); err != nil {
+		t.Fatalf("Finder metadata should be ignored: %v", err)
+	}
 	if err := os.WriteFile(filepath.Join(l.TargetDir, "notes.txt"), []byte("x"), 0o644); err != nil {
 		t.Fatal(err)
 	}

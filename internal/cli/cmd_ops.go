@@ -61,7 +61,7 @@ func cmdDoctor(a *App, g *globalFlags, args []string) error {
 			if verr := layout.ValidateTopLevel(); verr != nil {
 				add("TargetDir 白名单", "FAIL", verr.Error())
 			} else {
-				add("TargetDir 白名单", "PASS", "只包含 .tmp/、.eimmortal.lock、data/、meta/")
+				add("TargetDir 白名单", "PASS", "只包含 .tmp/、.eimmortal.lock、data/、meta/（忽略 .DS_Store）")
 			}
 			if verr := layout.ValidateStagingVolume(); verr != nil {
 				add("暂存区同卷", "FAIL", verr.Error())

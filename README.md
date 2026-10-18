@@ -88,6 +88,8 @@ eimmortal --password-file /run/secrets/eimmortal backup --source /data --json
   meta/00000001.journal      # 加密增量日志（哈希链）
 ```
 
+macOS Finder 可能在 `<TargetDir>/` 顶层生成 `.DS_Store`；它不含备份内容，程序会忽略它，不会因此中断备份。
+
 ## 安全边界（请务必读）
 
 1. **主密码不可更改**。忘记 = 永久无法恢复；唯一补救是 `compact --new-identity` 重建全库。

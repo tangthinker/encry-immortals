@@ -25,9 +25,13 @@ const (
 	// LegacyLockFileName is accepted in the whitelist so that vaults written by
 	// older builds are not reported as polluted.
 	LegacyLockFileName = ".apex.lock"
-	JournalSuffix      = ".journal"
-	PackSuffix         = ".dat"
-	packPrefix         = "pack_"
+	// FinderMetadataFileName is created by macOS Finder when the directory is
+	// browsed. It carries no vault content, so it is ignored rather than
+	// treated as TargetDir pollution.
+	FinderMetadataFileName = ".DS_Store"
+	JournalSuffix          = ".journal"
+	PackSuffix             = ".dat"
+	packPrefix             = "pack_"
 	// JournalNameWidth is the zero-padded width of journal file names (§03.1).
 	JournalNameWidth = 8
 	// MaxSeq is the largest sequence representable by an 8-digit file name.
@@ -122,9 +126,15 @@ func (l *Layout) ValidateTopLevel() error {
 		return apexerr.Wrapf(err, apexerr.CodeUsage, "无法读取 TargetDir：%s", l.TargetDir)
 	}
 	for _, e := range entries {
+		if e.Name() == FinderMetadataFileName && e.Type().IsRegular() {
+			// macOS recreates this file without user action; it holds no vault
+			// data, so it must not block backups. Anything else under that name
+			// (e.g. a directory) is still pollution.
+			continue
+		}
 		if !topLevelAllowed[e.Name()] {
 			return apexerr.Newf(apexerr.CodeCorrupt, "TargetDir 内出现非白名单条目：%s", e.Name()).
-				WithScope("该目录必须是网盘盲盒，只允许 .tmp/、.eimmortal.lock、data/、meta/").
+				WithScope("该目录必须是网盘盲盒，只允许 .tmp/、.eimmortal.lock、data/、meta/（.DS_Store 会被忽略）").
 				WithNext("把该条目移出 TargetDir 后重试")
 		}
 	}
