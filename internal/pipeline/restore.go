@@ -258,9 +258,9 @@ func (r *restoreRun) logf(format string, args ...any) {
 	}
 }
 
-// restoreProgressInterval throttles progress lines so that restoring many tiny
-// files does not flood the terminal.
-const restoreProgressInterval = time.Second
+// progressInterval throttles progress lines so that many tiny files do not
+// flood the terminal during backup or restore.
+const progressInterval = time.Second
 
 // reportProgress emits a throttled progress line. doneBytes counts the sizes of
 // files already examined plus the bytes written for the file in flight, so a
@@ -270,7 +270,7 @@ func (r *restoreRun) reportProgress(doneFiles int, doneBytes uint64, current str
 		return
 	}
 	now := r.opts.Now()
-	if !force && !r.lastProgress.IsZero() && now.Sub(r.lastProgress) < restoreProgressInterval {
+	if !force && !r.lastProgress.IsZero() && now.Sub(r.lastProgress) < progressInterval {
 		return
 	}
 	r.lastProgress = now

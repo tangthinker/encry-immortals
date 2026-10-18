@@ -94,7 +94,11 @@ func cmdBackup(a *App, g *globalFlags, args []string) error {
 	}
 	return s.printJSONOrHuman(doc, func() {
 		if !res.Changed {
-			fmt.Fprintln(s.stdout, "no changes")
+			if res.Truncated {
+				fmt.Fprintln(s.stdout, "没有写入任何文件（待备份文件都超过 session_max_mib）")
+			} else {
+				fmt.Fprintln(s.stdout, "no changes")
+			}
 			return
 		}
 		prefix := "已提交"
@@ -110,9 +114,14 @@ func cmdBackup(a *App, g *globalFlags, args []string) error {
 		}
 		if res.PlainBytes >= 64<<10 {
 			ratio := 100 * float64(res.PackBytes) / float64(res.PlainBytes)
-			fmt.Fprintf(s.stdout, "%d 个 pack · 明文 %s → 落盘 %s（%.0f%%）· journal %s · 用时 %s\n",
+			line := fmt.Sprintf("%d 个 pack · 明文 %s → 落盘 %s（%.0f%%）· journal %s · 用时 %s",
 				len(res.Packs), humanBytes(int64(res.PlainBytes)), humanBytes(int64(res.PackBytes)),
 				ratio, humanBytes(int64(res.JournalBytes)), res.Duration.Round(time.Millisecond))
+			if res.Duration > 0 {
+				line += fmt.Sprintf(" · 整体均速 %.1f MiB/s",
+					float64(res.PlainBytes)/res.Duration.Seconds()/(1<<20))
+			}
+			fmt.Fprintln(s.stdout, line)
 		} else {
 			fmt.Fprintf(s.stdout, "%d 个 pack · %s · journal %s · 用时 %s\n",
 				len(res.Packs), humanBytes(int64(res.PackBytes)), humanBytes(int64(res.JournalBytes)),

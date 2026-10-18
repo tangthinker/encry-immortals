@@ -68,11 +68,62 @@ type backupRun struct {
 	now       func() time.Time
 	progress  func(format string, args ...any)
 	sourceDir string
+
+	totalFiles   int
+	totalBytes   uint64
+	writeStart   time.Time
+	lastProgress time.Time
 }
 
 func (r *backupRun) logf(format string, args ...any) {
 	if r.progress != nil {
 		r.progress(format, args...)
+	}
+}
+
+// reportProgress emits a throttled backup progress line with throughput.
+//
+// doneBytes counts the sizes of planned files already handled plus the bytes of
+// the file in flight, so a single large file still moves the percentage. The
+// speed is the average over the write phase.
+func (r *backupRun) reportProgress(doneFiles int, doneBytes uint64, current string, force bool) {
+	if r.progress == nil {
+		return
+	}
+	now := r.now()
+	if !force && !r.lastProgress.IsZero() && now.Sub(r.lastProgress) < progressInterval {
+		return
+	}
+	r.lastProgress = now
+	if r.totalFiles > 0 && doneFiles > r.totalFiles {
+		doneFiles = r.totalFiles
+	}
+	if r.totalBytes > 0 && doneBytes > r.totalBytes {
+		doneBytes = r.totalBytes
+	}
+	pct := 100.0
+	if r.totalBytes > 0 {
+		pct = float64(doneBytes) * 100 / float64(r.totalBytes)
+	}
+	speed := 0.0
+	if !r.writeStart.IsZero() {
+		if elapsed := now.Sub(r.writeStart); elapsed > 0 {
+			speed = float64(doneBytes) / elapsed.Seconds() / (1 << 20)
+		}
+	}
+	switch {
+	case current == "" && speed > 0:
+		r.logf("备份进度 %d/%d 文件 · %s/%s（%.0f%%）· 写入均速 %.1f MiB/s",
+			doneFiles, r.totalFiles, humanBytes(doneBytes), humanBytes(r.totalBytes), pct, speed)
+	case current == "":
+		r.logf("备份进度 %d/%d 文件 · %s/%s（%.0f%%）",
+			doneFiles, r.totalFiles, humanBytes(doneBytes), humanBytes(r.totalBytes), pct)
+	case speed > 0:
+		r.logf("备份进度 %d/%d 文件 · %s/%s（%.0f%%）· %.1f MiB/s · 当前 %s",
+			doneFiles, r.totalFiles, humanBytes(doneBytes), humanBytes(r.totalBytes), pct, speed, current)
+	default:
+		r.logf("备份进度 %d/%d 文件 · %s/%s（%.0f%%）· 当前 %s",
+			doneFiles, r.totalFiles, humanBytes(doneBytes), humanBytes(r.totalBytes), pct, current)
 	}
 }
 
@@ -160,6 +211,15 @@ func Backup(opts BackupOptions) (*BackupResult, error) {
 	if err != nil {
 		return nil, err
 	}
+	scannedFiles := 0
+	for _, e := range scanned.Entries {
+		if e.Kind == scan.KindFile {
+			scannedFiles++
+		}
+	}
+	changes := diff.Stats.Added + diff.Stats.Modified + diff.Stats.Deleted +
+		diff.Stats.Meta + diff.Stats.Dirs + diff.Stats.Links
+	run.logf("扫描完成：%d 个文件，%d 个变更", scannedFiles, changes)
 	res.Stats = diff.Stats
 
 	if !diff.Stats.Changed() {
@@ -187,7 +247,34 @@ func Backup(opts BackupOptions) (*BackupResult, error) {
 	defer pw.Abort()
 
 	sessionCap := run.cfg.Storage.SessionMaxMiB << 20
+	// Plan the content ops that fit in this run's write budget so progress can
+	// reach 100% for the files this run intends to write.
+	var plannedFiles int
+	var plannedBytes uint64
+	for _, op := range diff.Ops {
+		if op.Type != wire.OpAdd && op.Type != wire.OpModify {
+			continue
+		}
+		if sessionCap > 0 && plannedBytes+op.Size > sessionCap {
+			continue
+		}
+		plannedFiles++
+		plannedBytes += op.Size
+	}
+	run.totalFiles = plannedFiles
+	run.totalBytes = plannedBytes
+	run.writeStart = run.now()
+	if plannedFiles > 0 {
+		run.logf("准备写入：%d 个文件、%s", plannedFiles, humanBytes(plannedBytes))
+	}
+
 	var written uint64
+	var doneFiles int
+	var doneBytes uint64
+	var truncatedFiles int
+	var truncatedBytes uint64
+	var truncatedAdded, truncatedModified int
+	var staleAdded, staleModified int
 	kept := make([]wire.Op, 0, len(diff.Ops))
 	for i := range diff.Ops {
 		op := diff.Ops[i]
@@ -197,14 +284,32 @@ func Backup(opts BackupOptions) (*BackupResult, error) {
 		}
 		if sessionCap > 0 && written+op.Size > sessionCap {
 			res.Truncated = true
-			run.logf("已达到单次会话上限 %d MiB，其余改动留待下次备份", run.cfg.Storage.SessionMaxMiB)
+			truncatedFiles++
+			truncatedBytes += op.Size
+			if op.Type == wire.OpAdd {
+				truncatedAdded++
+			} else {
+				truncatedModified++
+			}
 			continue
 		}
+		run.reportProgress(doneFiles, doneBytes, op.Path, false)
+		base := doneBytes
+		doneBytes += op.Size
+		onWrite := func(written uint64) {
+			run.reportProgress(doneFiles, base+written, op.Path, false)
+		}
 		entry := scan.Entry{Path: op.Path, Size: int64(op.Size), Kind: scan.KindFile}
-		slices, sum, werr := run.writeFileWithRetry(pw, entry, op.Mode, op.ModTimeNS)
+		slices, sum, werr := run.writeFileWithRetry(pw, entry, op.Mode, op.ModTimeNS, onWrite)
 		if errors.Is(werr, ErrStale) {
 			res.Skipped++
 			run.logf("跳过（读取期间被修改）：%s", op.Path)
+			if op.Type == wire.OpAdd {
+				staleAdded++
+			} else {
+				staleModified++
+			}
+			doneFiles++
 			continue
 		}
 		if werr != nil {
@@ -215,6 +320,17 @@ func Backup(opts BackupOptions) (*BackupResult, error) {
 		kept = append(kept, op)
 		written += op.Size
 		res.PlainBytes += op.Size
+		doneFiles++
+	}
+	// Report what this commit actually contains, not what the diff wished for.
+	res.Stats.Added -= truncatedAdded + staleAdded
+	res.Stats.Modified -= truncatedModified + staleModified
+	if truncatedFiles > 0 {
+		run.logf("已达到单次会话上限 %d MiB：跳过 %d 个文件（%s），剩余改动留给下次备份",
+			run.cfg.Storage.SessionMaxMiB, truncatedFiles, humanBytes(truncatedBytes))
+	}
+	if plannedFiles > 0 {
+		run.reportProgress(plannedFiles, doneBytes, "", true)
 	}
 	diff.Ops = kept
 	if len(diff.Ops) == 0 {
@@ -317,10 +433,10 @@ func statSigOf(abs string) (statSig, error) {
 	return sig, nil
 }
 
-func (r *backupRun) writeFileWithRetry(pw *store.PackWriter, e scan.Entry, mode uint32, modTimeNS int64) ([]wire.SliceRef, [32]byte, error) {
+func (r *backupRun) writeFileWithRetry(pw *store.PackWriter, e scan.Entry, mode uint32, modTimeNS int64, onProgress func(uint64)) ([]wire.SliceRef, [32]byte, error) {
 	delays := []time.Duration{200 * time.Millisecond, 500 * time.Millisecond, time.Second}
 	for attempt := 0; ; attempt++ {
-		slices, sum, err := r.writeFileOnce(pw, e)
+		slices, sum, err := r.writeFileOnce(pw, e, onProgress)
 		if err == nil {
 			return slices, sum, nil
 		}
@@ -345,7 +461,7 @@ func (r *backupRun) writeFileWithRetry(pw *store.PackWriter, e scan.Entry, mode 
 }
 
 // writeFileOnce streams one file into slices with before/after stat comparison.
-func (r *backupRun) writeFileOnce(pw *store.PackWriter, e scan.Entry) ([]wire.SliceRef, [32]byte, error) {
+func (r *backupRun) writeFileOnce(pw *store.PackWriter, e scan.Entry, onProgress func(uint64)) ([]wire.SliceRef, [32]byte, error) {
 	var zero [32]byte
 	abs, err := pathx.SafeJoin(r.sourceDir, e.Path)
 	if err != nil {
@@ -373,6 +489,7 @@ func (r *backupRun) writeFileOnce(pw *store.PackWriter, e scan.Entry) ([]wire.Sl
 	defer f.Close()
 	h := sha256.New()
 	var slices []wire.SliceRef
+	var written uint64
 	for index := uint32(0); ; index++ {
 		n, rerr := io.ReadFull(f, buf)
 		if n > 0 {
@@ -388,6 +505,10 @@ func (r *backupRun) writeFileOnce(pw *store.PackWriter, e scan.Entry) ([]wire.Sl
 				return nil, zero, aerr
 			}
 			slices = append(slices, ref)
+			written += uint64(n)
+			if onProgress != nil {
+				onProgress(written)
+			}
 		}
 		if rerr == io.EOF || rerr == io.ErrUnexpectedEOF {
 			break
