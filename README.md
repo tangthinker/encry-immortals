@@ -154,6 +154,24 @@ make golden    # 校验 golden vectors
 - CI 分层见 [.github/workflows/ci.yml](.github/workflows/ci.yml)：push 跑 gofmt/vet/全量测试/崩溃矩阵/golden，夜间跑 3×30 min fuzz，另有三平台编译与 Windows 核心单测。
 - 实现级决策见 [docs/dev/decisions.md](docs/dev/decisions.md)（ADR-001…），待决策事项见 [docs/dev/open-questions.md](docs/dev/open-questions.md)。
 
+## 发布
+
+推送 `v*` 标签会触发 [.github/workflows/release.yml](.github/workflows/release.yml)，自动完成：
+
+- 跑 `go vet ./...` 与 `go test ./...`
+- 交叉编译 linux/darwin 的 amd64/arm64 与 windows/amd64（`CGO_ENABLED=0`）
+- 把二进制、`README.md`、`config.example.toml` 打包成 `tar.gz`（Windows 为 `zip`）
+- 生成 `checksums.txt`（SHA-256）
+- 用 GitHub 自动生成的 release notes 创建 Release；带 `-` 的标签（如 `v0.1.0-rc.1`）自动标记为 prerelease
+- 版本号通过 `-ldflags "-X main.version=<tag>"` 注入，`eimmortal version` 显示去掉 `v` 后的版本
+
+```bash
+git tag -a v0.1.0 -m "v0.1.0"
+git push origin v0.1.0
+```
+
+想先在本地看产物：`make release-snapshot`，输出在 `dist/`，不会影响远端。
+
 ## 许可证
 
 未定（待补）。

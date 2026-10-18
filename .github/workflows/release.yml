@@ -1,0 +1,53 @@
+name: release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  release:
+    name: build and publish
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: vet and test
+        run: |
+          go vet ./...
+          go test ./...
+
+      - name: build archives
+        env:
+          TAG: ${{ github.ref_name }}
+        run: ./scripts/release-build.sh "${TAG#v}" dist
+
+      - name: publish release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          args=(--title "$TAG" --generate-notes)
+          case "$TAG" in
+            *-*) args+=(--prerelease) ;;
+          esac
+          assets=(dist/eimmortal_*.tar.gz dist/eimmortal_*.zip dist/checksums.txt)
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release upload "$TAG" "${assets[@]}" --clobber
+          else
+            gh release create "$TAG" "${assets[@]}" "${args[@]}"
+          fi

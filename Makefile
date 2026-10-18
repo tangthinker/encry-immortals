@@ -1,7 +1,9 @@
 GO ?= go
 BIN := bin/eimmortal
+VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo 0.0.0-dev)
+DIST ?= dist
 
-.PHONY: all build test test-race vet fmt golden fuzz crash-test scale-test clean
+.PHONY: all build test test-race vet fmt golden fuzz crash-test scale-test release-snapshot clean
 
 all: build
 
@@ -36,5 +38,9 @@ scale-test:
 fuzz:
 	$(GO) test ./internal/wire -run '^$' -fuzz 'FuzzSliceEnvelope' -fuzztime ${FUZZTIME:-60s}
 
+# Local release archives, same script as the tag-triggered GitHub workflow.
+release-snapshot:
+	./scripts/release-build.sh "$(VERSION)" "$(DIST)"
+
 clean:
-	rm -rf bin coverage.out
+	rm -rf bin dist coverage.out
