@@ -25,11 +25,12 @@
 # dir = "/Users/you/.eimmortal/eimmortal-vault"
 
 [storage]
-# 数据平面：网盘负责同步的密文目录（data/、meta/、.tmp/）。必填。
+# 数据平面根目录。eimmortal 把 data/、meta/ 放在 <target_dir>/output/ 下，
+# .tmp 和 lock 留在根目录；网盘同步整个 target_dir 即可（output/ 是盲盒内容）。必填。
 # 支持 "~/" 开头；不能是源目录本身，也不能与源目录互相包含。
 target_dir = "/Users/you/QuarkDrive/eimmortal"
 
-# 暂存区：先写这里，再原子改名进 data/。
+# 暂存区：先写这里，再原子改名进 output/data/。
 # 留空 = <target_dir>/.tmp（推荐）。只有 target_dir 所在卷不适合写临时文件时才改，
 # 且必须与 target_dir 同卷，否则 doctor 会报错。
 # staging_dir = ""

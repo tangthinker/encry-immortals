@@ -18,7 +18,7 @@ vault_id   %s
 KDF        argon2id t=%d m=%d KiB p=%d k=%d
 
 == 必须保存的三件东西 ==
-1) 加密数据目录：TargetDir 下的 data/ 与 meta/（网盘同步的那份）
+1) 加密数据目录：TargetDir 下的 output/data 与 output/meta（网盘同步的那份）
 2) Armor Key：以 EIMMORTAL-KEY-V2- 开头的一长串，由 eimmortal export-key 生成
 3) 主密码本身
 

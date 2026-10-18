@@ -59,6 +59,7 @@ type RestoreOptions struct {
 // PackPlan is one pack needed by a snapshot, for progressive downloads.
 type PackPlan struct {
 	Name    string `json:"name"`
+	Path    string `json:"path"`
 	Size    uint64 `json:"size"`
 	Present bool   `json:"present"`
 	Files   int    `json:"files"`
@@ -320,7 +321,11 @@ func buildPackPlans(layout *store.Layout, chain *journal.Chain) []PackPlan {
 			p := plans[name]
 			if p == nil {
 				pr := chain.Tree.Packs[name]
-				p = &PackPlan{Name: name, Size: pr.Size}
+				display := name
+				if layout.UsesOutputDir() {
+					display = store.OutputDirName + "/" + name
+				}
+				p = &PackPlan{Name: name, Path: display, Size: pr.Size}
 				plans[name] = p
 			}
 			if !seen[name] {

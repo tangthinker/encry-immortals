@@ -75,7 +75,7 @@ func cmdRestore(a *App, g *globalFlags, args []string) error {
 					status = "缺失"
 				}
 				fmt.Fprintf(s.stdout, "%-6s %-10s 文件 %-5d %s  %s\n",
-					status, humanBytes(int64(p.Size)), p.Files, humanBytes(int64(p.Bytes)), p.Name)
+					status, humanBytes(int64(p.Size)), p.Files, humanBytes(int64(p.Bytes)), p.Path)
 			}
 		})
 	}

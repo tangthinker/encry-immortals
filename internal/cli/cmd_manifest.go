@@ -42,8 +42,12 @@ func cmdManifest(a *App, g *globalFlags, args []string) error {
 	if err != nil {
 		return err
 	}
+	displayPack := doc.Pack
+	if layout.UsesOutputDir() {
+		displayPack = "output/" + displayPack
+	}
 	return s.printJSONOrHuman(doc, func() {
-		fmt.Fprintf(s.stdout, "pack   %s\n", doc.Pack)
+		fmt.Fprintf(s.stdout, "pack   %s\n", displayPack)
 		fmt.Fprintf(s.stdout, "大小   %s · seq %d · tx %x\n",
 			humanBytes(int64(doc.PackSize)), doc.Seq, doc.TxnID)
 		fmt.Fprintf(s.stdout, "文件   %d 个\n", len(doc.Ops))
@@ -61,6 +65,10 @@ func cmdManifest(a *App, g *globalFlags, args []string) error {
 // resolvePackName accepts a TargetDir-relative pack path, a pack file name, or
 // a pack base name without the .dat suffix.
 func resolvePackName(layout *store.Layout, arg string) (string, error) {
+	arg = filepath.ToSlash(arg)
+	if layout.UsesOutputDir() && strings.HasPrefix(arg, store.OutputDirName+"/") {
+		arg = strings.TrimPrefix(arg, store.OutputDirName+"/")
+	}
 	if strings.Contains(arg, "/") {
 		if _, err := layout.AbsPath(arg); err != nil {
 			return "", err

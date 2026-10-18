@@ -83,15 +83,27 @@ eimmortal --password-file /run/secrets/eimmortal backup --source /data --json
   lock                       # flock
   RECOVERY.txt               # 可打印的恢复须知
 
-<TargetDir>/                 # 数据平面（可放网盘）
+<TargetDir>/                 # 网盘同步的根目录
   .tmp/                      # 同卷暂存区（原子换入）
   .eimmortal.lock            # 跨机写者记录（旧版 .apex.lock 仍被识别）
-  data/YYYY-MM/pack_*.dat    # 加密数据包（≤128 MiB）
-  meta/00000001.journal      # 加密增量日志（哈希链）
-  meta/manifests/*.manifest  # 每个 pack 的加密记录（新备份生成）
+  output/                    # 真正被网盘同步的盲盒
+    data/YYYY-MM/pack_*.dat  # 加密数据包（≤128 MiB）
+    meta/00000001.journal    # 加密增量日志（哈希链）
+    meta/manifests/*.manifest # 每个 pack 的加密记录（新备份生成）
 ```
 
-每个 pack 都会在 `meta/manifests/` 下生成一个加密 manifest，记录该 pack 的切片和涉及的文件。`eimmortal manifest <pack>` 可以查看它；旧库没有 manifest 时会自动忽略。
+每个 pack 都会在 `output/meta/manifests/` 下生成一个加密 manifest，记录该 pack 的切片和涉及的文件。`eimmortal manifest <pack>` 可以查看它；旧库没有 manifest 时会自动忽略。
+
+旧布局（`data/`、`meta/` 直接在 `<TargetDir>/` 下）仍然能读。想切到新布局，停止所有 eimmortal 进程后执行：
+
+```bash
+cd /Volumes/Backups/quark-backup
+mkdir output
+mv data meta output/
+eimmortal doctor
+```
+
+如果网盘客户端同步整个 `<TargetDir>`，`.tmp` 和 lock 仍会被它看到；把同步范围指向 `<TargetDir>/output`（或排除 `.tmp` 与 `.eimmortal.lock`）即可让云端只看到盲盒内容。lock 只在写入期间存在。
 
 macOS Finder 可能在 `<TargetDir>/` 顶层生成 `.DS_Store`；它不含备份内容，程序会忽略它，不会因此中断备份。
 

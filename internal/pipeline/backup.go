@@ -159,7 +159,7 @@ func Backup(opts BackupOptions) (*BackupResult, error) {
 	if info, serr := os.Stat(sourceRoot); serr != nil || !info.IsDir() {
 		return nil, apexerr.Newf(apexerr.CodeUsage, "源目录不可用：%s", sourceRoot)
 	}
-	overlap, err := pathx.Overlap(sourceRoot, opts.Layout.TargetDir)
+	overlap, err := pathx.Overlap(sourceRoot, opts.Layout.RootDir)
 	if err != nil {
 		return nil, apexerr.Wrap(err, apexerr.CodeInternal, "无法判断源目录与 TargetDir 是否重叠")
 	}
@@ -180,11 +180,11 @@ func Backup(opts BackupOptions) (*BackupResult, error) {
 	}
 
 	if opts.BreakLock {
-		if err := lock.BreakTargetLock(opts.Layout.TargetDir); err != nil {
+		if err := lock.BreakTargetLock(opts.Layout.RootDir); err != nil {
 			return nil, err
 		}
 	}
-	tl, err := lock.AcquireTargetLock(opts.Layout.TargetDir, lock.NewTargetInfo(opts.ToolVersion))
+	tl, err := lock.AcquireTargetLock(opts.Layout.RootDir, lock.NewTargetInfo(opts.ToolVersion))
 	if err != nil {
 		return nil, err
 	}

@@ -12,21 +12,23 @@
 
 <SourceDir>/                           # 数据源区，任意位置，只读访问
 
-<TargetDir>/                           # 存储平面，被网盘客户端单向抓取
+<TargetDir>/                           # 存储平面根目录
   .tmp/                                # [同卷暂存区] 见 1.2
-  .apex.lock                           # 跨机持有者记录（不参与 flock，见 1.4）
-  data/
-    2026-03/                           # 目录分片，见 06
-      pack_1773000000123_a1b2c3.dat
-      pack_1773000045678_d4e5f6.dat
-  meta/
-    00000001.journal
-    00000002.journal
+  .eimmortal.lock                      # 跨机持有者记录（不参与 flock，见 1.4）
+  output/                              # 网盘同步的盲盒
+    data/
+      2026-03/                         # 目录分片，见 06
+        pack_1773000000123_a1b2c3.dat
+        pack_1773000045678_d4e5f6.dat
+    meta/
+      00000001.journal
+      00000002.journal
+      manifests/                       # 每个 pack 一个加密记录
 ~~~
 
 **必须**：
 - 控制平面目录权限 `0700`，`vault.meta` 权限 `0600`。
-- `TargetDir` 内**只允许**出现 `.tmp/`、`.apex.lock`、`data/**`、`meta/**` 四类条目；出现任何其他条目视为污染，`backup` 与 `restore` 必须拒绝继续（防止用户在 Target 里放了自己的文件导致同步语义混乱）。
+- `TargetDir` 根目录只允许 `.tmp/`、`.eimmortal.lock`、`output/**`（旧布局为 `data/**`、`meta/**`，仍兼容）；出现任何其他条目视为污染，`backup` 与 `restore` 必须拒绝继续（防止用户在 Target 里放了自己的文件导致同步语义混乱）。
 - `data/` 与 `meta/` 的关系是**单向引用**：journal 引用 pack，pack 永不引用 journal。反向依赖会破坏"pack 是哑存储"的性质。
 
 **禁止**：

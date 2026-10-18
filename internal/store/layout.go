@@ -20,6 +20,7 @@ import (
 const (
 	DataDirName    = "data"
 	MetaDirName    = "meta"
+	OutputDirName  = "output"
 	StagingDirName = ".tmp"
 	LockFileName   = ".eimmortal.lock"
 	// LegacyLockFileName is accepted in the whitelist so that vaults written by
@@ -44,8 +45,21 @@ const (
 )
 
 // Layout describes one TargetDir on disk.
+//
+// New vaults keep the cloud-visible payload under <TargetDir>/output/:
+//
+//	<TargetDir>/.tmp            staging (excluded from the blind box)
+//	<TargetDir>/.eimmortal.lock writer record
+//	<TargetDir>/output/data     packs
+//	<TargetDir>/output/meta     journals + manifests
+//
+// Older vaults have data/ and meta/ directly under TargetDir; NewLayout detects
+// that layout so they keep working until the user moves the two directories
+// into output/.
 type Layout struct {
-	TargetDir   string
+	RootDir     string // outer TargetDir; owns .tmp and the lock
+	TargetDir   string // data/meta base: <RootDir>/output or RootDir (legacy)
+	OutputDir   string // <RootDir>/output for the current layout, empty for legacy
 	DataDir     string
 	MetaDir     string
 	ManifestDir string
@@ -54,6 +68,9 @@ type Layout struct {
 	// (spec §01.2), in which case a same-volume check is mandatory.
 	StagingExternal bool
 }
+
+// UsesOutputDir reports whether the current layout keeps data/meta under output/.
+func (l *Layout) UsesOutputDir() bool { return l.OutputDir != "" }
 
 // NewLayout resolves target and staging directories to absolute paths.
 func NewLayout(targetDir, stagingOverride string) (*Layout, error) {
@@ -65,13 +82,25 @@ func NewLayout(targetDir, stagingOverride string) (*Layout, error) {
 		return nil, apexerr.New(apexerr.CodeUsage, "未配置 TargetDir").
 			WithNext("在 config.toml 的 [storage] 段设置 target_dir")
 	}
-	l := &Layout{
-		TargetDir:   target,
-		DataDir:     filepath.Join(target, DataDirName),
-		MetaDir:     filepath.Join(target, MetaDirName),
-		ManifestDir: filepath.Join(target, MetaDirName, ManifestDirName),
-		StagingDir:  filepath.Join(target, StagingDirName),
+	output := filepath.Join(target, OutputDirName)
+	useOutput := true
+	if !pathExists(filepath.Join(output, DataDirName)) && !pathExists(filepath.Join(output, MetaDirName)) {
+		if pathExists(filepath.Join(target, DataDirName)) || pathExists(filepath.Join(target, MetaDirName)) {
+			useOutput = false // legacy layout: data/meta directly under TargetDir
+		}
 	}
+	l := &Layout{
+		RootDir:    target,
+		TargetDir:  target,
+		StagingDir: filepath.Join(target, StagingDirName),
+	}
+	if useOutput {
+		l.OutputDir = output
+		l.TargetDir = output
+	}
+	l.DataDir = filepath.Join(l.TargetDir, DataDirName)
+	l.MetaDir = filepath.Join(l.TargetDir, MetaDirName)
+	l.ManifestDir = filepath.Join(l.MetaDir, ManifestDirName)
 	if strings.TrimSpace(stagingOverride) != "" {
 		staging, err := expandPath(stagingOverride)
 		if err != nil {
@@ -106,9 +135,15 @@ func samePath(a, b string) bool {
 	return filepath.Clean(a) == filepath.Clean(b)
 }
 
+func pathExists(p string) bool {
+	_, err := os.Stat(p)
+	return err == nil
+}
+
 // Ensure creates the directories eimmortal owns.
 func (l *Layout) Ensure() error {
-	for _, dir := range []string{l.TargetDir, l.DataDir, l.MetaDir, l.ManifestDir, l.StagingDir} {
+	dirs := []string{l.RootDir, l.TargetDir, l.DataDir, l.MetaDir, l.ManifestDir, l.StagingDir}
+	for _, dir := range dirs {
 		if err := os.MkdirAll(dir, 0o755); err != nil {
 			return apexerr.Wrapf(err, apexerr.CodeNoSpace, "无法创建目录 %s", dir)
 		}
@@ -116,21 +151,21 @@ func (l *Layout) Ensure() error {
 	return nil
 }
 
-// topLevelAllowed is the whitelist from spec §01.1 / I12.
+// topLevelAllowed is the invariant part of the whitelist from spec §01.1 /
+// I12. data/ and meta/ are allowed only in the legacy layout; output/ only in
+// the current one.
 var topLevelAllowed = map[string]bool{
 	StagingDirName:     true,
 	LockFileName:       true,
 	LegacyLockFileName: true,
-	DataDirName:        true,
-	MetaDirName:        true,
 }
 
 // ValidateTopLevel enforces the TargetDir entry whitelist. Any foreign entry is
 // pollution and must stop backup/restore (spec §01.1).
 func (l *Layout) ValidateTopLevel() error {
-	entries, err := os.ReadDir(l.TargetDir)
+	entries, err := os.ReadDir(l.RootDir)
 	if err != nil {
-		return apexerr.Wrapf(err, apexerr.CodeUsage, "无法读取 TargetDir：%s", l.TargetDir)
+		return apexerr.Wrapf(err, apexerr.CodeUsage, "无法读取 TargetDir：%s", l.RootDir)
 	}
 	for _, e := range entries {
 		if e.Name() == FinderMetadataFileName && e.Type().IsRegular() {
@@ -139,11 +174,23 @@ func (l *Layout) ValidateTopLevel() error {
 			// (e.g. a directory) is still pollution.
 			continue
 		}
-		if !topLevelAllowed[e.Name()] {
-			return apexerr.Newf(apexerr.CodeCorrupt, "TargetDir 内出现非白名单条目：%s", e.Name()).
-				WithScope("该目录必须是网盘盲盒，只允许 .tmp/、.eimmortal.lock、data/、meta/（.DS_Store 会被忽略）").
-				WithNext("把该条目移出 TargetDir 后重试")
+		if topLevelAllowed[e.Name()] {
+			continue
 		}
+		if l.OutputDir != "" {
+			if e.Name() == OutputDirName {
+				continue
+			}
+		} else if e.Name() == DataDirName || e.Name() == MetaDirName {
+			continue
+		}
+		allowed := ".tmp/、.eimmortal.lock、data/、meta/"
+		if l.OutputDir != "" {
+			allowed = ".tmp/、.eimmortal.lock、output/"
+		}
+		return apexerr.Newf(apexerr.CodeCorrupt, "TargetDir 内出现非白名单条目：%s", e.Name()).
+			WithScope("该目录必须是网盘盲盒，只允许 " + allowed + "（.DS_Store 会被忽略）").
+			WithNext("把该条目移出 TargetDir 后重试")
 	}
 	return nil
 }

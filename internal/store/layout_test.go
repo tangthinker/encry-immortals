@@ -32,13 +32,13 @@ func TestLayoutEnsureAndWhitelist(t *testing.T) {
 		t.Fatalf("clean target rejected: %v", err)
 	}
 	// macOS Finder creates .DS_Store without asking; it is not pollution.
-	if err := os.WriteFile(filepath.Join(l.TargetDir, FinderMetadataFileName), []byte("finder"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(l.RootDir, FinderMetadataFileName), []byte("finder"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	if err := l.ValidateTopLevel(); err != nil {
 		t.Fatalf("Finder metadata should be ignored: %v", err)
 	}
-	if err := os.WriteFile(filepath.Join(l.TargetDir, "notes.txt"), []byte("x"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(l.RootDir, "notes.txt"), []byte("x"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	if err := l.ValidateTopLevel(); err == nil {
@@ -148,10 +148,66 @@ func TestWriteFileDurable(t *testing.T) {
 }
 func TestLayoutAcceptsLegacyLockName(t *testing.T) {
 	l := newTestLayout(t)
-	if err := os.WriteFile(filepath.Join(l.TargetDir, LegacyLockFileName), []byte("{}"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(l.RootDir, LegacyLockFileName), []byte("{}"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	if err := l.ValidateTopLevel(); err != nil {
 		t.Fatalf("legacy lock file must not be reported as pollution: %v", err)
+	}
+}
+
+func TestOutputLayoutPaths(t *testing.T) {
+	root := t.TempDir()
+	l, err := NewLayout(root, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !l.UsesOutputDir() {
+		t.Fatal("an empty TargetDir should use the output/ layout")
+	}
+	if l.RootDir != root || l.TargetDir != filepath.Join(root, OutputDirName) {
+		t.Fatalf("unexpected roots: %+v", l)
+	}
+	if l.DataDir != filepath.Join(root, OutputDirName, DataDirName) ||
+		l.MetaDir != filepath.Join(root, OutputDirName, MetaDirName) ||
+		l.StagingDir != filepath.Join(root, StagingDirName) {
+		t.Fatalf("unexpected paths: %+v", l)
+	}
+	if err := l.Ensure(); err != nil {
+		t.Fatal(err)
+	}
+	for _, dir := range []string{l.RootDir, l.OutputDir, l.DataDir, l.MetaDir, l.StagingDir} {
+		if info, err := os.Stat(dir); err != nil || !info.IsDir() {
+			t.Fatalf("%s missing: %v", dir, err)
+		}
+	}
+	if err := l.ValidateTopLevel(); err != nil {
+		t.Fatalf("output layout rejected: %v", err)
+	}
+}
+
+func TestLegacyLayoutDetection(t *testing.T) {
+	root := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(root, DataDirName), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(root, MetaDirName), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	l, err := NewLayout(root, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if l.UsesOutputDir() || l.TargetDir != root {
+		t.Fatalf("legacy layout not detected: %+v", l)
+	}
+	if l.DataDir != filepath.Join(root, DataDirName) {
+		t.Fatalf("legacy data dir = %s", l.DataDir)
+	}
+	if err := l.Ensure(); err != nil {
+		t.Fatal(err)
+	}
+	if err := l.ValidateTopLevel(); err != nil {
+		t.Fatalf("legacy layout rejected: %v", err)
 	}
 }

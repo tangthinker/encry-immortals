@@ -271,10 +271,10 @@ func TestRestoreRefusesNonEmptyDest(t *testing.T) {
 func TestBackupRejectsTargetPollution(t *testing.T) {
 	e := newEnv(t)
 	writeFile(t, filepath.Join(e.source, "a.txt"), []byte("a"), 0o644)
-	if err := os.MkdirAll(e.layout.TargetDir, 0o755); err != nil {
+	if err := os.MkdirAll(e.layout.RootDir, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	writeFile(t, filepath.Join(e.layout.TargetDir, "README.md"), []byte("nope"), 0o644)
+	writeFile(t, filepath.Join(e.layout.RootDir, "README.md"), []byte("nope"), 0o644)
 	_, err := Backup(BackupOptions{
 		Layout: e.layout, Keys: testKeys, Config: e.cfg, SourceDir: e.source,
 	})
@@ -288,7 +288,7 @@ func TestBackupRejectsTargetPollution(t *testing.T) {
 
 func TestBackupRejectsOverlappingDirectories(t *testing.T) {
 	e := newEnv(t)
-	if err := os.MkdirAll(e.layout.TargetDir, 0o755); err != nil {
+	if err := os.MkdirAll(e.layout.RootDir, 0o755); err != nil {
 		t.Fatal(err)
 	}
 	_, err := Backup(BackupOptions{

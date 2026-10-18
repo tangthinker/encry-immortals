@@ -73,7 +73,7 @@ func Compact(opts CompactOptions) (*CompactResult, error) {
 	if err != nil {
 		return nil, apexerr.Wrapf(err, apexerr.CodeUsage, "新 TargetDir 路径非法：%s", opts.OutDir)
 	}
-	if overlap, oerr := pathx.Overlap(outDir, opts.Layout.TargetDir); oerr != nil || overlap {
+	if overlap, oerr := pathx.Overlap(outDir, opts.Layout.RootDir); oerr != nil || overlap {
 		return nil, apexerr.New(apexerr.CodeUsage, "新 TargetDir 不能与旧 TargetDir 重叠").
 			WithNext("换一个全新的目录作为 --out")
 	}
