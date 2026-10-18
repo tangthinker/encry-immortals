@@ -82,6 +82,7 @@ func cmdBackup(a *App, g *globalFlags, args []string) error {
 		PlainBytes   uint64 `json:"plain_bytes"`
 		PackBytes    uint64 `json:"pack_bytes"`
 		JournalBytes int    `json:"journal_bytes"`
+		Manifests    int    `json:"manifests"`
 		Truncated    bool   `json:"truncated"`
 		Skipped      int    `json:"skipped"`
 	}
@@ -90,7 +91,7 @@ func cmdBackup(a *App, g *globalFlags, args []string) error {
 		Added: res.Stats.Added, Modified: res.Stats.Modified, Deleted: res.Stats.Deleted,
 		Meta: res.Stats.Meta, Dirs: res.Stats.Dirs, Links: res.Stats.Links,
 		PlainBytes: res.PlainBytes, PackBytes: res.PackBytes, JournalBytes: res.JournalBytes,
-		Truncated: res.Truncated, Skipped: res.Skipped,
+		Manifests: res.Manifests, Truncated: res.Truncated, Skipped: res.Skipped,
 	}
 	return s.printJSONOrHuman(doc, func() {
 		if !res.Changed {
@@ -117,6 +118,9 @@ func cmdBackup(a *App, g *globalFlags, args []string) error {
 			line := fmt.Sprintf("%d 个 pack · 明文 %s → 落盘 %s（%.0f%%）· journal %s · 用时 %s",
 				len(res.Packs), humanBytes(int64(res.PlainBytes)), humanBytes(int64(res.PackBytes)),
 				ratio, humanBytes(int64(res.JournalBytes)), res.Duration.Round(time.Millisecond))
+			if res.Manifests > 0 {
+				line += fmt.Sprintf(" · %d 个 pack 记录", res.Manifests)
+			}
 			if res.Duration > 0 {
 				line += fmt.Sprintf(" · 整体均速 %.1f MiB/s",
 					float64(res.PlainBytes)/res.Duration.Seconds()/(1<<20))

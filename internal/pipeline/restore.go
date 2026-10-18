@@ -50,30 +50,47 @@ type RestoreOptions struct {
 	AllowExternalSymlink bool
 	RestoreSUID          bool
 	DryRun               bool
+	SkipMissingPacks     bool
+	ListPacks            bool
 	Progress             func(format string, args ...any)
 	Now                  func() time.Time
 }
 
+// PackPlan is one pack needed by a snapshot, for progressive downloads.
+type PackPlan struct {
+	Name    string `json:"name"`
+	Size    uint64 `json:"size"`
+	Present bool   `json:"present"`
+	Files   int    `json:"files"`
+	Bytes   uint64 `json:"bytes"`
+}
+
 // RestoreResult reports what one restore did.
 type RestoreResult struct {
-	Seq      uint64
-	Files    int
-	Dirs     int
-	Links    int
-	Bytes    uint64
-	Skipped  []string
-	Corrupt  []string
-	DryRun   bool
-	Duration time.Duration
+	Seq          uint64
+	Files        int
+	Dirs         int
+	Links        int
+	Bytes        uint64
+	Skipped      []string
+	Corrupt      []string
+	MissingPacks []string
+	MissingFiles []string
+	Incomplete   bool
+	PackPlans    []PackPlan
+	DryRun       bool
+	Duration     time.Duration
 }
 
 type restoreRun struct {
-	opts    RestoreOptions
-	chain   *journal.Chain
-	reader  *store.PackReader
-	destDir string
-	res     *RestoreResult
-	prog    *progressLog
+	opts         RestoreOptions
+	chain        *journal.Chain
+	reader       *store.PackReader
+	destDir      string
+	res          *RestoreResult
+	prog         *progressLog
+	missingPacks map[string]bool
+	missingFiles []string
 
 	totalFiles   int
 	totalBytes   uint64
@@ -114,9 +131,17 @@ func Restore(opts RestoreOptions) (*RestoreResult, error) {
 	}
 
 	files := chain.Tree.Files()
+	if opts.ListPacks {
+		res.PackPlans = buildPackPlans(opts.Layout, chain)
+		res.Duration = opts.Now().Sub(start)
+		return res, nil
+	}
 	run.totalFiles = len(files)
 	for _, n := range files {
 		run.totalBytes += n.Size
+	}
+	if opts.SkipMissingPacks {
+		run.missingPacks = make(map[string]bool)
 	}
 	run.logf("准备还原 seq=%d：%d 个文件、%s → %s",
 		chain.LastSeq, run.totalFiles, humanBytes(run.totalBytes), destRoot)
@@ -178,6 +203,12 @@ func Restore(opts RestoreOptions) (*RestoreResult, error) {
 			if same, _ := fileMatches(dest, n); same {
 				continue
 			}
+			if missing, merr := run.missingPacksFor(n); merr != nil {
+				return nil, merr
+			} else if len(missing) > 0 {
+				run.noteMissing(n, missing)
+				continue
+			}
 			if werr := run.writeFile(n, dest, onWrite); werr != nil {
 				if apexerr.CodeOf(werr) == apexerr.CodeIncomplete {
 					return nil, werr
@@ -202,6 +233,12 @@ func Restore(opts RestoreOptions) (*RestoreResult, error) {
 		if !write {
 			continue
 		}
+		if missing, merr := run.missingPacksFor(n); merr != nil {
+			return nil, merr
+		} else if len(missing) > 0 {
+			run.noteMissing(n, missing)
+			continue
+		}
 		if werr := run.writeFile(n, dest, onWrite); werr != nil {
 			if apexerr.CodeOf(werr) == apexerr.CodeIncomplete {
 				return nil, werr
@@ -214,6 +251,14 @@ func Restore(opts RestoreOptions) (*RestoreResult, error) {
 		run.markDone(n.Path)
 		// K8: crash after the first file landed, before the rest.
 		testhooks.Crash("K8")
+	}
+	if len(run.missingPacks) > 0 {
+		res.Incomplete = true
+		for name := range run.missingPacks {
+			res.MissingPacks = append(res.MissingPacks, name)
+		}
+		sort.Strings(res.MissingPacks)
+		res.MissingFiles = append([]string(nil), run.missingFiles...)
 	}
 	run.reportProgress(len(files), processedBytes, "", true)
 
@@ -243,7 +288,10 @@ func Restore(opts RestoreOptions) (*RestoreResult, error) {
 			return nil, err
 		}
 		if run.prog != nil {
-			if err := run.prog.finish(); err != nil {
+			if res.Incomplete {
+				// Keep the resume marker: missing packs may arrive later.
+				run.prog.close()
+			} else if err := run.prog.finish(); err != nil {
 				return nil, err
 			}
 		}
@@ -256,6 +304,86 @@ func (r *restoreRun) logf(format string, args ...any) {
 	if r.opts.Progress != nil {
 		r.opts.Progress(format, args...)
 	}
+}
+
+// buildPackPlans lists the packs needed by a snapshot and whether each is
+// already present with the expected size.
+func buildPackPlans(layout *store.Layout, chain *journal.Chain) []PackPlan {
+	plans := make(map[string]*PackPlan)
+	for _, n := range chain.Tree.Files() {
+		seen := make(map[string]bool)
+		for i, sl := range n.Slices {
+			if i >= len(n.PackNames) {
+				continue
+			}
+			name := n.PackNames[i]
+			p := plans[name]
+			if p == nil {
+				pr := chain.Tree.Packs[name]
+				p = &PackPlan{Name: name, Size: pr.Size}
+				plans[name] = p
+			}
+			if !seen[name] {
+				seen[name] = true
+				p.Files++
+			}
+			p.Bytes += uint64(sl.PlainLen)
+		}
+	}
+	out := make([]PackPlan, 0, len(plans))
+	for _, p := range plans {
+		if abs, err := layout.AbsPath(p.Name); err == nil {
+			if info, serr := os.Stat(abs); serr == nil && uint64(info.Size()) == p.Size {
+				p.Present = true
+			}
+		}
+		out = append(out, *p)
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].Name < out[j].Name })
+	return out
+}
+
+// missingPacksFor reports the packs needed by n that are absent or truncated.
+// It is only called when SkipMissingPacks is set.
+func (r *restoreRun) missingPacksFor(n *journal.Node) ([]string, error) {
+	if !r.opts.SkipMissingPacks {
+		return nil, nil
+	}
+	var missing []string
+	seen := make(map[string]bool)
+	for _, name := range n.PackNames {
+		if seen[name] {
+			continue
+		}
+		seen[name] = true
+		pr, ok := r.chain.Tree.Packs[name]
+		if !ok {
+			return nil, apexerr.Newf(apexerr.CodeCorrupt, "缺少 pack 指纹：%s", name)
+		}
+		abs, err := r.opts.Layout.AbsPath(name)
+		if err != nil {
+			return nil, err
+		}
+		info, serr := os.Stat(abs)
+		if os.IsNotExist(serr) {
+			missing = append(missing, name)
+			continue
+		}
+		if serr != nil {
+			return nil, apexerr.Wrapf(serr, apexerr.CodeUsage, "无法读取 pack：%s", name)
+		}
+		if uint64(info.Size()) != pr.Size {
+			missing = append(missing, name)
+		}
+	}
+	return missing, nil
+}
+
+func (r *restoreRun) noteMissing(n *journal.Node, missing []string) {
+	for _, name := range missing {
+		r.missingPacks[name] = true
+	}
+	r.missingFiles = append(r.missingFiles, n.Path)
 }
 
 // progressInterval throttles progress lines so that many tiny files do not
@@ -728,4 +856,14 @@ func (p *progressLog) finish() error {
 	}
 	_ = os.Remove(filepath.Join(filepath.Dir(p.path), legacyProgressFileName))
 	return nil
+}
+
+// close flushes and closes the marker without deleting it, so an incomplete
+// restore can resume once missing packs have arrived.
+func (p *progressLog) close() {
+	if p.f != nil {
+		p.f.Sync()
+		p.f.Close()
+		p.f = nil
+	}
 }

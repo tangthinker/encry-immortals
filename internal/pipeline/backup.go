@@ -52,6 +52,7 @@ type BackupResult struct {
 	PlainBytes     uint64
 	PackBytes      uint64
 	JournalBytes   int
+	Manifests      int
 	StagingSwept   int
 	Truncated      bool
 	Skipped        int
@@ -348,6 +349,17 @@ func Backup(opts BackupOptions) (*BackupResult, error) {
 		res.PackBytes += p.Size
 	}
 	res.Packs = packs
+
+	// Per-pack manifests are written before the journal commit: if either step
+	// fails, the packs (and any manifests) are orphaned and gc can remove them.
+	manifests, err := writeManifests(opts.Layout, opts.Keys, packs, diff.Ops, txn, chain.LastSeq+1)
+	if err != nil {
+		return nil, err
+	}
+	res.Manifests = manifests
+	if manifests > 0 {
+		run.logf("已写入 %d 个 pack 记录", manifests)
+	}
 
 	// S4/S5/S6: journal commit ----------------------------------------------
 	seq, journalSHA, journalBytes, err := run.commitJournal(chain, diff, packs, txn)

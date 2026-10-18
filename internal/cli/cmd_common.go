@@ -19,6 +19,7 @@ func registerAll() {
 	register(&command{name: "restore", summary: "还原到目标目录（可 --at <seq>）", run: cmdRestore})
 	register(&command{name: "log", summary: "列出提交历史", run: cmdLog})
 	register(&command{name: "show", summary: "查看某次提交的变更明细", run: cmdShow})
+	register(&command{name: "manifest", summary: "查看某个 pack 的 manifest 记录", run: cmdManifest})
 	register(&command{name: "ls", summary: "以某快照视角列出文件树", run: cmdLs})
 	register(&command{name: "cat", summary: "输出某文件在某快照下的内容", run: cmdCat})
 	register(&command{name: "verify", summary: "校验完整性：--size（默认）/ --sample N / --deep", run: cmdVerify})

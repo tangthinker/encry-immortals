@@ -56,7 +56,9 @@ eimmortal verify --deep
 eimmortal doctor --chain            # 链、锚点、孤儿
 eimmortal doctor --camouflage       # 伪装命名/文件头审计（06.7）
 
-# 云端还没同步完？只有 restore 允许等待
+# 云端还没同步完？先看缺哪些 pack，再逐步恢复
+eimmortal restore --list-packs
+eimmortal restore /tmp/restore-check --skip-missing-packs
 eimmortal restore /tmp/restore-check --wait-for-packs 5m
 
 # 6. 回收已删除历史（旧库保持不动，验证后再手工删）
@@ -86,7 +88,10 @@ eimmortal --password-file /run/secrets/eimmortal backup --source /data --json
   .eimmortal.lock            # 跨机写者记录（旧版 .apex.lock 仍被识别）
   data/YYYY-MM/pack_*.dat    # 加密数据包（≤128 MiB）
   meta/00000001.journal      # 加密增量日志（哈希链）
+  meta/manifests/*.manifest  # 每个 pack 的加密记录（新备份生成）
 ```
+
+每个 pack 都会在 `meta/manifests/` 下生成一个加密 manifest，记录该 pack 的切片和涉及的文件。`eimmortal manifest <pack>` 可以查看它；旧库没有 manifest 时会自动忽略。
 
 macOS Finder 可能在 `<TargetDir>/` 顶层生成 `.DS_Store`；它不含备份内容，程序会忽略它，不会因此中断备份。
 

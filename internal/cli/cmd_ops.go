@@ -412,7 +412,21 @@ func cmdGC(a *App, g *globalFlags, args []string) error {
 			}
 		}
 	}
-	var pruned int
+	manifests, err := layout.ListManifests()
+	if err != nil {
+		return err
+	}
+	localBases := make(map[string]bool, len(local))
+	for _, name := range local {
+		localBases[strings.TrimSuffix(filepath.Base(name), store.PackSuffix)] = true
+	}
+	var orphanManifests []string
+	for _, name := range manifests {
+		if !localBases[strings.TrimSuffix(name, store.ManifestSuffix)] {
+			orphanManifests = append(orphanManifests, name)
+		}
+	}
+	var pruned, prunedManifests int
 	if *prune {
 		if !*yes {
 			return apexerr.New(apexerr.CodeUsage, "gc --prune-orphans 需要 --yes 二次确认").
@@ -428,25 +442,51 @@ func cmdGC(a *App, g *globalFlags, args []string) error {
 				if rerr := os.Remove(abs); rerr == nil {
 					pruned++
 				}
+				if mrel := layout.ManifestRelPath(name); mrel != "" {
+					if mabs, merr := layout.AbsPath(mrel); merr == nil {
+						if rerr := os.Remove(mabs); rerr == nil {
+							prunedManifests++
+						}
+					}
+				}
+			}
+			for _, name := range orphanManifests {
+				if rerr := os.Remove(filepath.Join(layout.ManifestDir, name)); rerr == nil {
+					prunedManifests++
+				}
 			}
 		}
 	}
 	type gcJSON struct {
-		StagingRemoved int      `json:"staging_removed"`
-		StagingFreed   int64    `json:"staging_freed"`
-		Orphans        []string `json:"orphans"`
-		OrphanBytes    int64    `json:"orphan_bytes"`
-		Pruned         int      `json:"pruned"`
+		StagingRemoved  int      `json:"staging_removed"`
+		StagingFreed    int64    `json:"staging_freed"`
+		Orphans         []string `json:"orphans"`
+		OrphanBytes     int64    `json:"orphan_bytes"`
+		OrphanManifests []string `json:"orphan_manifests"`
+		Pruned          int      `json:"pruned"`
+		PrunedManifests int      `json:"pruned_manifests"`
 	}
-	doc := gcJSON{StagingRemoved: removed, StagingFreed: freed, Orphans: orphans, OrphanBytes: orphanBytes, Pruned: pruned}
+	doc := gcJSON{
+		StagingRemoved: removed, StagingFreed: freed, Orphans: orphans, OrphanBytes: orphanBytes,
+		OrphanManifests: orphanManifests, Pruned: pruned, PrunedManifests: prunedManifests,
+	}
 	return s.printJSONOrHuman(doc, func() {
 		fmt.Fprintf(s.stdout, "暂存区：清理 %d 个超过 24h 的残留（%s）\n", removed, humanBytes(freed))
 		fmt.Fprintf(s.stdout, "孤儿 pack：%d 个（%s）\n", len(orphans), humanBytes(orphanBytes))
 		for _, name := range orphans {
 			fmt.Fprintf(s.stdout, "  %s\n", name)
 		}
+		if len(orphanManifests) > 0 {
+			fmt.Fprintf(s.stdout, "孤儿 manifest：%d 个\n", len(orphanManifests))
+			for _, name := range orphanManifests {
+				fmt.Fprintf(s.stdout, "  %s\n", name)
+			}
+		}
 		if pruned > 0 {
 			fmt.Fprintf(s.stdout, "已删除 %d 个孤儿 pack（仅本地）\n", pruned)
+		}
+		if prunedManifests > 0 {
+			fmt.Fprintf(s.stdout, "已删除 %d 个孤儿 manifest\n", prunedManifests)
 		}
 		fmt.Fprintln(s.stderr, "提示：程序不会删除云端文件；如需清理请自行在网盘客户端操作。")
 	})
@@ -568,7 +608,7 @@ func runCamouflageChecks(layout *store.Layout, add func(name, status, detail str
 	if len(badExt) > 0 {
 		add("伪装扩展名", "FAIL", "出现可疑扩展名："+strings.Join(firstFew(badExt, 5), ", "))
 	} else {
-		add("伪装扩展名", "PASS", "只有 .dat / .journal")
+		add("伪装扩展名", "PASS", "只有 .dat / .journal / .manifest")
 	}
 	if len(badNames) > 0 {
 		add("pack 命名", "FAIL", "不符合 pack_<13位>_<6位36进制>.dat："+strings.Join(firstFew(badNames, 3), ", "))

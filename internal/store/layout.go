@@ -31,7 +31,12 @@ const (
 	FinderMetadataFileName = ".DS_Store"
 	JournalSuffix          = ".journal"
 	PackSuffix             = ".dat"
-	packPrefix             = "pack_"
+	// ManifestDirName holds one encrypted manifest per pack (a small per-pack
+	// index used for progressive restore). It lives under meta/ so the top-level
+	// whitelist does not change.
+	ManifestDirName = "manifests"
+	ManifestSuffix  = ".manifest"
+	packPrefix      = "pack_"
 	// JournalNameWidth is the zero-padded width of journal file names (§03.1).
 	JournalNameWidth = 8
 	// MaxSeq is the largest sequence representable by an 8-digit file name.
@@ -40,10 +45,11 @@ const (
 
 // Layout describes one TargetDir on disk.
 type Layout struct {
-	TargetDir  string
-	DataDir    string
-	MetaDir    string
-	StagingDir string
+	TargetDir   string
+	DataDir     string
+	MetaDir     string
+	ManifestDir string
+	StagingDir  string
 	// StagingExternal is true when staging was configured outside TargetDir
 	// (spec §01.2), in which case a same-volume check is mandatory.
 	StagingExternal bool
@@ -60,10 +66,11 @@ func NewLayout(targetDir, stagingOverride string) (*Layout, error) {
 			WithNext("在 config.toml 的 [storage] 段设置 target_dir")
 	}
 	l := &Layout{
-		TargetDir:  target,
-		DataDir:    filepath.Join(target, DataDirName),
-		MetaDir:    filepath.Join(target, MetaDirName),
-		StagingDir: filepath.Join(target, StagingDirName),
+		TargetDir:   target,
+		DataDir:     filepath.Join(target, DataDirName),
+		MetaDir:     filepath.Join(target, MetaDirName),
+		ManifestDir: filepath.Join(target, MetaDirName, ManifestDirName),
+		StagingDir:  filepath.Join(target, StagingDirName),
 	}
 	if strings.TrimSpace(stagingOverride) != "" {
 		staging, err := expandPath(stagingOverride)
@@ -99,9 +106,9 @@ func samePath(a, b string) bool {
 	return filepath.Clean(a) == filepath.Clean(b)
 }
 
-// Ensure creates the four directories eimmortal owns.
+// Ensure creates the directories eimmortal owns.
 func (l *Layout) Ensure() error {
-	for _, dir := range []string{l.TargetDir, l.DataDir, l.MetaDir, l.StagingDir} {
+	for _, dir := range []string{l.TargetDir, l.DataDir, l.MetaDir, l.ManifestDir, l.StagingDir} {
 		if err := os.MkdirAll(dir, 0o755); err != nil {
 			return apexerr.Wrapf(err, apexerr.CodeNoSpace, "无法创建目录 %s", dir)
 		}
@@ -194,6 +201,33 @@ func (l *Layout) JournalName(seq uint64) string {
 // JournalRelPath returns "meta/<seq>.journal".
 func (l *Layout) JournalRelPath(seq uint64) string {
 	return MetaDirName + "/" + l.JournalName(seq)
+}
+
+// ManifestRelPath maps a pack's TargetDir-relative name to its per-pack
+// manifest: "meta/manifests/<pack base>.manifest".
+func (l *Layout) ManifestRelPath(packName string) string {
+	base := strings.TrimSuffix(filepath.Base(filepath.FromSlash(packName)), PackSuffix)
+	return MetaDirName + "/" + ManifestDirName + "/" + base + ManifestSuffix
+}
+
+// ListManifests returns the manifest file names under meta/manifests, sorted.
+func (l *Layout) ListManifests() ([]string, error) {
+	entries, err := os.ReadDir(l.ManifestDir)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, nil
+		}
+		return nil, apexerr.Wrap(err, apexerr.CodeInternal, "无法枚举 meta/manifests/")
+	}
+	var out []string
+	for _, e := range entries {
+		if e.IsDir() || !strings.HasSuffix(e.Name(), ManifestSuffix) {
+			continue
+		}
+		out = append(out, e.Name())
+	}
+	sort.Strings(out)
+	return out, nil
 }
 
 // ParseJournalName parses a journal file name into its sequence.

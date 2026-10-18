@@ -93,7 +93,7 @@
 
 | 检查 | 通过标准 |
 |---|---|
-| 扩展名 | 只有 `.dat` 与 `.journal`；无 `.enc` / `.crypto` / `.zip` / `.bak` |
+| 扩展名 | 只有 `.dat`、`.journal` 与每 pack 的 `.manifest`；无 `.enc` / `.crypto` / `.zip` / `.bak` |
 | 文件名熵 | `pack_<13位数字>_<6位36进制>`，无源文件名片段、无用户语义 |
 | 文件头 | 前 16 字节为随机 `pack_id`；32 B 头内**不含** `PK\x03\x04`、`\x89PNG`、`%PDF` 等魔数，也不存在可被指纹化的固定前缀 |
 | 熵分布 | 除 32 B pack 头与每切片 34 B 信封头（ver_alg/env_len/plain_len/codec/nonce）外全为密文；这两处头不含任何用户语义，不泄露文件类型 |

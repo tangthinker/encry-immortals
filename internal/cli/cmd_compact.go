@@ -81,6 +81,7 @@ func cmdCompact(a *App, g *globalFlags, args []string) error {
 		Dirs       int      `json:"dirs"`
 		Links      int      `json:"links"`
 		Packs      int      `json:"packs"`
+		Manifests  int      `json:"manifests"`
 		Bytes      uint64   `json:"logical_bytes"`
 		PackBytes  uint64   `json:"pack_bytes"`
 		Dropped    []string `json:"dropped"`
@@ -90,7 +91,7 @@ func cmdCompact(a *App, g *globalFlags, args []string) error {
 	}
 	doc := compactJSON{
 		Seq: res.Seq, Files: res.Files, Dirs: res.Dirs, Links: res.Links,
-		Packs: len(res.Packs), Bytes: res.Bytes, PackBytes: res.PackBytes,
+		Packs: len(res.Packs), Manifests: res.Manifests, Bytes: res.Bytes, PackBytes: res.PackBytes,
 		Dropped: res.Dropped, NewVaultID: res.NewVaultID, ArmorKey: res.ArmorKey, DryRun: *dryRun,
 	}
 	if err := s.printJSONOrHuman(doc, func() {
@@ -99,9 +100,9 @@ func cmdCompact(a *App, g *globalFlags, args []string) error {
 				res.Files, res.Dirs, res.Links, humanBytes(int64(res.Bytes)))
 			return
 		}
-		fmt.Fprintf(s.stdout, "已重建新库 seq=%d · 文件 %d 目录 %d 链接 %d · %s in %d packs · 用时 %s\n",
+		fmt.Fprintf(s.stdout, "已重建新库 seq=%d · 文件 %d 目录 %d 链接 %d · %s in %d packs · %d 个 pack 记录 · 用时 %s\n",
 			res.Seq, res.Files, res.Dirs, res.Links, humanBytes(int64(res.PackBytes)),
-			len(res.Packs), res.Duration.Round(time.Millisecond))
+			len(res.Packs), res.Manifests, res.Duration.Round(time.Millisecond))
 	}); err != nil {
 		return err
 	}

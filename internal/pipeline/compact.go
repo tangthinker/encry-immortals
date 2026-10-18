@@ -45,6 +45,7 @@ type CompactResult struct {
 	Dirs       int
 	Links      int
 	Packs      []wire.PackRef
+	Manifests  int
 	Bytes      uint64 // logical bytes of the kept files
 	PackBytes  uint64
 	Dropped    []string
@@ -214,6 +215,11 @@ func Compact(opts CompactOptions) (*CompactResult, error) {
 	for _, p := range packs {
 		res.PackBytes += p.Size
 	}
+	manifests, err := writeManifests(newLayout, outKeys, packs, ops, txn, 1)
+	if err != nil {
+		return nil, err
+	}
+	res.Manifests = manifests
 
 	// One journal, seq=1, containing the whole snapshot.
 	body := &wire.Journal{

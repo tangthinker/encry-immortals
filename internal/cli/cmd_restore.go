@@ -22,12 +22,14 @@ func cmdRestore(a *App, g *globalFlags, args []string) error {
 	allowExternal := fs.Bool("allow-external-symlink", false, "允许还原指向绝对路径的符号链接")
 	restoreSUID := fs.Bool("restore-suid", false, "还原 setuid/setgid 位")
 	waitPacks := fs.String("wait-for-packs", "", "等待缺失 pack 同步完成的最长时间（如 120s / 5m）")
+	skipMissing := fs.Bool("skip-missing-packs", false, "缺少 pack 时跳过对应文件，先恢复已下载的部分")
+	listPacks := fs.Bool("list-packs", false, "只列出快照需要的 pack 和大小，不写盘")
 	dryRun := fs.Bool("dry-run", false, "只统计不写盘")
 	if err := parseInterspersed(fs, args); err != nil {
 		return apexerr.Wrap(err, apexerr.CodeUsage, "参数错误")
 	}
 	dest := fs.Arg(0)
-	if dest == "" {
+	if dest == "" && !*listPacks {
 		return apexerr.New(apexerr.CodeUsage, "用法：eimmortal restore <DestDir> [--at <seq>]").
 			WithNext("建议把 DestDir 指向一个空目录或尚不存在的目录")
 	}
@@ -58,24 +60,43 @@ func cmdRestore(a *App, g *globalFlags, args []string) error {
 		AllowExternalSymlink: *allowExternal,
 		RestoreSUID:          *restoreSUID,
 		DryRun:               *dryRun,
+		SkipMissingPacks:     *skipMissing,
+		ListPacks:            *listPacks,
 		Progress:             s.progress,
 	})
 	if err != nil {
 		return err
 	}
+	if *listPacks {
+		return s.printJSONOrHuman(res.PackPlans, func() {
+			for _, p := range res.PackPlans {
+				status := "已下载"
+				if !p.Present {
+					status = "缺失"
+				}
+				fmt.Fprintf(s.stdout, "%-6s %-10s 文件 %-5d %s  %s\n",
+					status, humanBytes(int64(p.Size)), p.Files, humanBytes(int64(p.Bytes)), p.Name)
+			}
+		})
+	}
 	type jsonResult struct {
-		Seq     uint64   `json:"seq"`
-		Files   int      `json:"files"`
-		Dirs    int      `json:"dirs"`
-		Links   int      `json:"links"`
-		Bytes   uint64   `json:"bytes"`
-		Skipped []string `json:"skipped"`
-		Corrupt []string `json:"corrupt"`
-		DryRun  bool     `json:"dry_run"`
+		Seq          uint64   `json:"seq"`
+		Files        int      `json:"files"`
+		Dirs         int      `json:"dirs"`
+		Links        int      `json:"links"`
+		Bytes        uint64   `json:"bytes"`
+		Skipped      []string `json:"skipped"`
+		Corrupt      []string `json:"corrupt"`
+		MissingPacks []string `json:"missing_packs"`
+		MissingFiles []string `json:"missing_files"`
+		Incomplete   bool     `json:"incomplete"`
+		DryRun       bool     `json:"dry_run"`
 	}
 	doc := jsonResult{
 		Seq: res.Seq, Files: res.Files, Dirs: res.Dirs, Links: res.Links,
-		Bytes: res.Bytes, Skipped: res.Skipped, Corrupt: res.Corrupt, DryRun: *dryRun,
+		Bytes: res.Bytes, Skipped: res.Skipped, Corrupt: res.Corrupt,
+		MissingPacks: res.MissingPacks, MissingFiles: res.MissingFiles,
+		Incomplete: res.Incomplete, DryRun: *dryRun,
 	}
 	if err := s.printJSONOrHuman(doc, func() {
 		prefix := "已还原"
@@ -88,6 +109,17 @@ func cmdRestore(a *App, g *globalFlags, args []string) error {
 		if len(res.Skipped) > 0 {
 			fmt.Fprintf(s.stderr, "跳过 %d 个条目（已存在且策略为 %s）\n", len(res.Skipped), *overwrite)
 		}
+		if res.Incomplete {
+			fmt.Fprintf(s.stderr, "缺少 %d 个 pack，跳过 %d 个文件；已下载的部分已还原\n",
+				len(res.MissingPacks), len(res.MissingFiles))
+			for i, name := range res.MissingPacks {
+				if i >= 5 {
+					fmt.Fprintf(s.stderr, "  …还有 %d 个\n", len(res.MissingPacks)-i)
+					break
+				}
+				fmt.Fprintf(s.stderr, "  缺失：%s\n", name)
+			}
+		}
 	}); err != nil {
 		return err
 	}
@@ -98,6 +130,11 @@ func cmdRestore(a *App, g *globalFlags, args []string) error {
 		}
 		return apexerr.New(apexerr.CodeCorrupt, msg).
 			WithNext("执行 eimmortal verify --deep 定位损坏的 pack")
+	}
+	if res.Incomplete {
+		return apexerr.Newf(apexerr.CodeIncomplete,
+			"还原不完整：缺少 %d 个 pack，%d 个文件未还原", len(res.MissingPacks), len(res.MissingFiles)).
+			WithNext("把缺失的 pack 同步到本地后重跑同一条 restore；已还原的文件会跳过")
 	}
 	return nil
 }
