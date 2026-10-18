@@ -74,6 +74,10 @@ type restoreRun struct {
 	destDir string
 	res     *RestoreResult
 	prog    *progressLog
+
+	totalFiles   int
+	totalBytes   uint64
+	lastProgress time.Time
 }
 
 // Restore rebuilds the tree at DestDir, replaying journals up to AtSeq.
@@ -109,6 +113,14 @@ func Restore(opts RestoreOptions) (*RestoreResult, error) {
 		return nil, apexerr.New(apexerr.CodeUsage, "该 vault 还没有任何提交，无法还原")
 	}
 
+	files := chain.Tree.Files()
+	run.totalFiles = len(files)
+	for _, n := range files {
+		run.totalBytes += n.Size
+	}
+	run.logf("准备还原 seq=%d：%d 个文件、%s → %s",
+		chain.LastSeq, run.totalFiles, humanBytes(run.totalBytes), destRoot)
+
 	if !opts.DryRun {
 		if err := run.prepareDest(chain.LastSeq); err != nil {
 			return nil, err
@@ -142,10 +154,17 @@ func Restore(opts RestoreOptions) (*RestoreResult, error) {
 	}
 
 	// 2. regular file contents
-	for _, n := range chain.Tree.Files() {
+	var processedBytes uint64
+	for i, n := range files {
+		run.reportProgress(i, processedBytes, n.Path, i == 0)
 		dest, err := pathx.SafeJoin(destRoot, n.Path)
 		if err != nil {
 			return nil, apexerr.Newf(apexerr.CodeCorrupt, "还原路径不安全：%s", n.Path).WithErr(err)
+		}
+		base := processedBytes
+		processedBytes += n.Size
+		onWrite := func(written uint64) {
+			run.reportProgress(i, base+written, n.Path, false)
 		}
 		markedDone := run.prog != nil && run.prog.isDone(n.Path)
 		res.Files++
@@ -159,7 +178,7 @@ func Restore(opts RestoreOptions) (*RestoreResult, error) {
 			if same, _ := fileMatches(dest, n); same {
 				continue
 			}
-			if werr := run.writeFile(n, dest); werr != nil {
+			if werr := run.writeFile(n, dest, onWrite); werr != nil {
 				if apexerr.CodeOf(werr) == apexerr.CodeIncomplete {
 					return nil, werr
 				}
@@ -183,7 +202,7 @@ func Restore(opts RestoreOptions) (*RestoreResult, error) {
 		if !write {
 			continue
 		}
-		if werr := run.writeFile(n, dest); werr != nil {
+		if werr := run.writeFile(n, dest, onWrite); werr != nil {
 			if apexerr.CodeOf(werr) == apexerr.CodeIncomplete {
 				return nil, werr
 			}
@@ -196,9 +215,14 @@ func Restore(opts RestoreOptions) (*RestoreResult, error) {
 		// K8: crash after the first file landed, before the rest.
 		testhooks.Crash("K8")
 	}
+	run.reportProgress(len(files), processedBytes, "", true)
 
 	// 3. symlinks last (never write through a link created earlier)
-	for _, l := range chain.Tree.Links() {
+	links := chain.Tree.Links()
+	if len(links) > 0 {
+		run.logf("正在还原 %d 个符号链接…", len(links))
+	}
+	for _, l := range links {
 		dest, err := pathx.SafeJoin(destRoot, l.Path)
 		if err != nil {
 			return nil, apexerr.Newf(apexerr.CodeCorrupt, "还原路径不安全：%s", l.Path).WithErr(err)
@@ -214,6 +238,7 @@ func Restore(opts RestoreOptions) (*RestoreResult, error) {
 
 	// 4. modes, then 5. mtimes deepest first
 	if !opts.DryRun {
+		run.logf("正在应用权限与修改时间…")
 		if err := run.applyModesAndTimes(); err != nil {
 			return nil, err
 		}
@@ -231,6 +256,55 @@ func (r *restoreRun) logf(format string, args ...any) {
 	if r.opts.Progress != nil {
 		r.opts.Progress(format, args...)
 	}
+}
+
+// restoreProgressInterval throttles progress lines so that restoring many tiny
+// files does not flood the terminal.
+const restoreProgressInterval = time.Second
+
+// reportProgress emits a throttled progress line. doneBytes counts the sizes of
+// files already examined plus the bytes written for the file in flight, so a
+// single large file still moves the percentage.
+func (r *restoreRun) reportProgress(doneFiles int, doneBytes uint64, current string, force bool) {
+	if r.opts.Progress == nil {
+		return
+	}
+	now := r.opts.Now()
+	if !force && !r.lastProgress.IsZero() && now.Sub(r.lastProgress) < restoreProgressInterval {
+		return
+	}
+	r.lastProgress = now
+	pct := 100.0
+	if r.totalBytes > 0 {
+		pct = float64(doneBytes) * 100 / float64(r.totalBytes)
+	}
+	if pct > 100 {
+		pct = 100
+	}
+	if current == "" {
+		r.logf("还原进度 %d/%d 文件 · %s/%s（%.0f%%）",
+			doneFiles, r.totalFiles, humanBytes(doneBytes), humanBytes(r.totalBytes), pct)
+		return
+	}
+	r.logf("还原进度 %d/%d 文件 · %s/%s（%.0f%%）· 当前 %s",
+		doneFiles, r.totalFiles, humanBytes(doneBytes), humanBytes(r.totalBytes), pct, current)
+}
+
+// humanBytes renders a byte count for progress lines.
+func humanBytes(n uint64) string {
+	const unit = 1024
+	if n < unit {
+		return fmt.Sprintf("%d B", n)
+	}
+	units := []string{"KiB", "MiB", "GiB", "TiB", "PiB"}
+	v := float64(n)
+	for _, u := range units {
+		v /= unit
+		if v < unit {
+			return fmt.Sprintf("%.1f %s", v, u)
+		}
+	}
+	return fmt.Sprintf("%.1f EiB", v/unit)
 }
 
 func (r *restoreRun) prepareDest(seq uint64) error {
@@ -372,7 +446,7 @@ func fileMatches(dest string, n *journal.Node) (bool, error) {
 	return bytes.Equal(h.Sum(nil), n.ContentSHA256[:]), nil
 }
 
-func (r *restoreRun) writeFile(n *journal.Node, dest string) error {
+func (r *restoreRun) writeFile(n *journal.Node, dest string, onProgress func(uint64)) error {
 	if err := os.MkdirAll(filepath.Dir(dest), 0o755); err != nil {
 		return apexerr.Wrapf(err, apexerr.CodeNoSpace, "无法创建父目录：%s", n.Path)
 	}
@@ -386,6 +460,7 @@ func (r *restoreRun) writeFile(n *journal.Node, dest string) error {
 		os.Remove(tmp)
 	}
 	h := sha256.New()
+	var written uint64
 	for i, ref := range n.Slices {
 		if i >= len(n.PackNames) {
 			cleanup()
@@ -422,6 +497,10 @@ func (r *restoreRun) writeFile(n *journal.Node, dest string) error {
 			return apexerr.Wrapf(werr, apexerr.CodeNoSpace, "写入还原文件失败：%s", n.Path)
 		}
 		h.Write(plain)
+		written += uint64(len(plain))
+		if onProgress != nil {
+			onProgress(written)
+		}
 	}
 	// No per-file fsync: the rename gives atomic visibility (spec 05.6) and a
 	// crash-truncated leftover is detected by the re-verification on resume.
