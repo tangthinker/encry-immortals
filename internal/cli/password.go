@@ -3,6 +3,7 @@ package cli
 import (
 	"fmt"
 	"os"
+	"runtime"
 
 	"golang.org/x/term"
 
@@ -83,7 +84,10 @@ func readPasswordFile(path string) ([]byte, error) {
 	if err != nil {
 		return nil, apexerr.Wrapf(err, apexerr.CodeUsage, "无法读取密码文件：%s", path)
 	}
-	if info.Mode().Perm()&0o077 != 0 {
+	// Windows has no POSIX mode bits: os.Stat reports 0666 for every writable
+	// file, so a 0600 check would reject any password file. Access there is
+	// enforced by ACLs, which FileMode cannot express.
+	if runtime.GOOS != "windows" && info.Mode().Perm()&0o077 != 0 {
 		return nil, apexerr.Newf(apexerr.CodeUsage, "密码文件权限过宽：%s（%o）", path, info.Mode().Perm()).
 			WithNext("执行 chmod 600 " + path)
 	}

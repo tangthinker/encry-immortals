@@ -5,6 +5,7 @@ import (
 	"encoding/base64"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -93,19 +94,24 @@ func TestMetaSaveLoadAndPermissions(t *testing.T) {
 	if err := m.Save(dir); err != nil {
 		t.Fatal(err)
 	}
-	info, err := os.Stat(filepath.Join(dir, MetaFileName))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if info.Mode().Perm() != FilePerm {
-		t.Fatalf("vault.meta mode = %o, want %o", info.Mode().Perm(), FilePerm)
-	}
-	dirInfo, err := os.Stat(dir)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if dirInfo.Mode().Perm() != DirPerm {
-		t.Fatalf("control plane mode = %o, want %o", dirInfo.Mode().Perm(), DirPerm)
+	// Windows has no POSIX mode bits: it reports 0666 for writable files and
+	// ignores chmod outside the read-only flag, so the mode assertions only
+	// make sense on Unix.
+	if runtime.GOOS != "windows" {
+		info, err := os.Stat(filepath.Join(dir, MetaFileName))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if info.Mode().Perm() != FilePerm {
+			t.Fatalf("vault.meta mode = %o, want %o", info.Mode().Perm(), FilePerm)
+		}
+		dirInfo, err := os.Stat(dir)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if dirInfo.Mode().Perm() != DirPerm {
+			t.Fatalf("control plane mode = %o, want %o", dirInfo.Mode().Perm(), DirPerm)
+		}
 	}
 	loaded, err := LoadMeta(dir)
 	if err != nil {

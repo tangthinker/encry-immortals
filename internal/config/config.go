@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 
 	"github.com/pelletier/go-toml/v2"
@@ -169,8 +170,12 @@ func Load(path string) (*Config, error) {
 		}
 		return nil, apexerr.Wrapf(err, apexerr.CodeUsage, "无法读取配置文件：%s", path)
 	}
-	if info, serr := os.Stat(path); serr == nil {
-		if info.Mode().Perm()&0o077 != 0 {
+	// POSIX mode bits do not exist on Windows: os.Stat reports 0666 for every
+	// writable file, so enforcing 0600 there would reject every config file.
+	// Windows access control is enforced by ACLs instead, which FileMode cannot
+	// express. The file holds no secrets, only the target path.
+	if runtime.GOOS != "windows" {
+		if info, serr := os.Stat(path); serr == nil && info.Mode().Perm()&0o077 != 0 {
 			return nil, apexerr.Newf(apexerr.CodeUsage,
 				"配置文件权限过宽：%s（%o），其他用户可能读到目标路径", path, info.Mode().Perm()).
 				WithNext("执行 chmod 600 " + path)

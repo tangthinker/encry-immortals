@@ -3,12 +3,21 @@ package config
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
 	"github.com/tangthinker/encry-immortals/internal/apexerr"
 	"github.com/tangthinker/encry-immortals/internal/wire"
 )
+
+// setTestHome points os.UserHomeDir at dir. Go reads USERPROFILE on Windows and
+// HOME elsewhere, so both are set.
+func setTestHome(t *testing.T, dir string) {
+	t.Helper()
+	t.Setenv("HOME", dir)
+	t.Setenv("USERPROFILE", dir)
+}
 
 func writeConfig(t *testing.T, body string) string {
 	t.Helper()
@@ -66,7 +75,7 @@ func TestLoadMissingFileUsesDefaults(t *testing.T) {
 
 func TestLoadExpandsVaultDir(t *testing.T) {
 	home := t.TempDir()
-	t.Setenv("HOME", home)
+	setTestHome(t, home)
 	path := writeConfig(t, `[vault]
 dir = "~/vault-test"
 
@@ -98,6 +107,9 @@ password = "hunter2"
 }
 
 func TestRejectLoosePermissions(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Windows has no POSIX mode bits")
+	}
 	path := writeConfig(t, `[storage]
 target_dir = "/tmp/x"
 `)
@@ -146,7 +158,7 @@ func TestParamsSnapshot(t *testing.T) {
 }
 func TestDefaultVaultDir(t *testing.T) {
 	home := t.TempDir()
-	t.Setenv("HOME", home)
+	setTestHome(t, home)
 	want := filepath.Join(home, ".eimmortal", "eimmortal-vault")
 	if got := Default().Vault.Dir; got != want {
 		t.Fatalf("default vault dir = %q, want %q", got, want)
@@ -155,7 +167,7 @@ func TestDefaultVaultDir(t *testing.T) {
 
 func TestDefaultVaultDirPrecedence(t *testing.T) {
 	home := t.TempDir()
-	t.Setenv("HOME", home)
+	setTestHome(t, home)
 
 	// Only the pre-rename path exists: keep using it.
 	apexVault := filepath.Join(home, ".config", "apex-vault")
@@ -187,7 +199,7 @@ func TestDefaultVaultDirPrecedence(t *testing.T) {
 
 func TestLegacyConfigPathIsPickedUp(t *testing.T) {
 	home := t.TempDir()
-	t.Setenv("HOME", home)
+	setTestHome(t, home)
 	legacyCfg := filepath.Join(home, ".config", "apex", "config.toml")
 	if err := os.MkdirAll(filepath.Dir(legacyCfg), 0o700); err != nil {
 		t.Fatal(err)
