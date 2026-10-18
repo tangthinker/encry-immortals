@@ -31,8 +31,8 @@
 
 | flag | 命令 | 语义 |
 |---|---|---|
-| `--config <path>` | 全局 | 配置文件位置（默认 `~/.config/apex/config.toml`） |
-| `--vault <dir>` | 全局 | 控制平面目录（默认 `~/.config/apex-vault`） |
+| `--config <path>` | 全局 | 配置文件位置（默认 `~/.config/eimmortal/config.toml`） |
+| `--vault <dir>` | 全局 | 控制平面目录（默认 `~/.eimmortal/eimmortal-vault`） |
 | `--json` | 全局 | 输出机器可读 JSON 到 stdout；人类进度信息走 stderr |
 | `--dry-run` | backup / restore / gc / compact | 只报告不落盘 |
 | `--message <msg>` | backup | 提交信息（等同 `git commit -m`） |
@@ -43,20 +43,20 @@
 | `--i-accept-unverified` | restore | 显式承担无法验证回滚的风险（07 章） |
 | `--overwrite <never\|if-changed\|always>` | restore | 默认 `never` |
 | `--accept-rollback` | restore / backup | 确认已知的 seq 回退 |
-| `--break-lock` | backup | 清除 `.apex.lock` |
+| `--break-lock` | backup | 清除 `.eimmortal.lock`（旧的 `.apex.lock` 一并清理） |
 | `--password-fd <n>` / `--password-file <path>` | 全部需要密钥的命令 | 见 10.4 |
 | `--jobs <n>` | verify / restore | 并发度 |
 
 ## 10.3 配置文件
 
-`~/.config/apex/config.toml`（权限 `0600`；**必须**拒绝 `0644`，避免被其他用户读到目标路径）：
+`~/.config/eimmortal/config.toml`（权限 `0600`；**必须**拒绝 `0644`，避免被其他用户读到目标路径）：
 
 ~~~toml
 [vault]
-dir = "~/.config/apex-vault"
+dir = "~/.eimmortal/eimmortal-vault"
 
 [storage]
-target_dir   = "/Users/me/QuarkDrive/apex"
+target_dir   = "/Users/me/QuarkDrive/eimmortal"
 staging_dir  = ""              # 空 = <target_dir>/.tmp （推荐，见 01 章 D-06）
 pack_max_bytes       = 134217728   # 128 MiB（D-08）
 slice_plain_bytes    = 33554432    # 32 MiB

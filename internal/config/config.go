@@ -94,15 +94,23 @@ type VerifyConfig struct {
 
 // Default returns the documented defaults.
 //
-// Pre-rename installations are picked up automatically: if the new default does
-// not exist but the old apex-vault directory does, the old one is used so that an
-// upgrade does not need a manual move.
+// The control plane lives under ~/.eimmortal so that it does not share the XDG
+// config directory with the (non-secret) config file. Existing installations are
+// picked up automatically: if the new default does not exist, the previous
+// default (~/.config/eimmortal-vault) and then the pre-rename path
+// (~/.config/apex-vault) are used, so an upgrade does not need a manual move.
 func Default() *Config {
 	home, _ := os.UserHomeDir()
-	vaultDir := filepath.Join(home, ".config", "eimmortal-vault")
+	vaultDir := filepath.Join(home, ".eimmortal", "eimmortal-vault")
 	if !pathExists(vaultDir) {
-		if legacy := filepath.Join(home, ".config", "apex-vault"); pathExists(legacy) {
-			vaultDir = legacy
+		for _, legacy := range []string{
+			filepath.Join(home, ".config", "eimmortal-vault"),
+			filepath.Join(home, ".config", "apex-vault"),
+		} {
+			if pathExists(legacy) {
+				vaultDir = legacy
+				break
+			}
 		}
 	}
 	return &Config{
@@ -174,10 +182,28 @@ func Load(path string) (*Config, error) {
 	if err := toml.Unmarshal(raw, cfg); err != nil {
 		return nil, apexerr.Wrapf(err, apexerr.CodeUsage, "配置文件语法错误：%s", path)
 	}
+	cfg.Vault.Dir = expandHome(cfg.Vault.Dir)
 	if err := cfg.Validate(); err != nil {
 		return nil, err
 	}
 	return cfg, nil
+}
+
+// expandHome expands a leading "~/" in [vault] dir, so the control plane accepts
+// the same notation as storage paths. Storage paths are expanded later by
+// store.NewLayout; the vault dir is used directly by the CLI.
+func expandHome(p string) string {
+	if p != "~" && !strings.HasPrefix(p, "~/") {
+		return p
+	}
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return p
+	}
+	if p == "~" {
+		return home
+	}
+	return filepath.Join(home, strings.TrimPrefix(p, "~/"))
 }
 
 // rejectSecrets enforces spec 10.3: no password material in the config file.

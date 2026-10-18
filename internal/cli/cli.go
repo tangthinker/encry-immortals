@@ -110,7 +110,7 @@ func (a *App) printUsage() {
 	}
 	b.WriteString("\n全局选项：\n")
 	b.WriteString("  --config <path>       配置文件（默认 ~/.config/eimmortal/config.toml）\n")
-	b.WriteString("  --vault <dir>         控制平面目录（默认 ~/.config/eimmortal-vault）\n")
+	b.WriteString("  --vault <dir>         控制平面目录（默认 ~/.eimmortal/eimmortal-vault）\n")
 	b.WriteString("  --json                结果输出为 JSON（人类进度仍走 stderr）\n")
 	b.WriteString("  --password-fd <n>     从文件描述符读取主密码（非交互场景）\n")
 	b.WriteString("  --password-file <p>   从 0600 权限的文件读取主密码\n")

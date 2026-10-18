@@ -235,7 +235,7 @@ func Init(dir string, opts InitOptions) (*InitResult, error) {
 // WriteRecoveryNote writes the printable RECOVERY.txt in the control plane
 // (spec 07.1: never inside TargetDir).
 func WriteRecoveryNote(dir string, m *Meta, params vaultcrypto.KDFParams, toolVersion string) error {
-	body := recoveryTemplate(m, params, toolVersion)
+	body := recoveryTemplate(m, params, toolVersion, dir)
 	path := filepath.Join(dir, RecoveryFileName)
 	if err := os.WriteFile(path, []byte(body), FilePerm); err != nil {
 		return apexerr.Wrapf(err, apexerr.CodeNoSpace, "无法写入 %s", path)

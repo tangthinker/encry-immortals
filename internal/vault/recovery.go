@@ -8,9 +8,9 @@ import (
 )
 
 // recoveryTemplate renders the printable RECOVERY.txt (spec 07.1, 07.7).
-func recoveryTemplate(m *Meta, params vaultcrypto.KDFParams, toolVersion string) string {
+func recoveryTemplate(m *Meta, params vaultcrypto.KDFParams, toolVersion, controlDir string) string {
 	created := time.Unix(m.CreatedUnix, 0).UTC().Format("2006-01-02 15:04:05 UTC")
-	return fmt.Sprintf(`APEX 灾难恢复须知（请打印或存入密码管理器）
+	return fmt.Sprintf(`EIMMORTAL 灾难恢复须知（请打印或存入密码管理器）
 
 生成时间   %s
 工具版本   %s
@@ -34,13 +34,13 @@ KDF        argon2id t=%d m=%d KiB p=%d k=%d
 1. eimmortal init --join <TargetDir>
 2. eimmortal import-key            # 粘贴 Armor Key，先验 CRC
 3. eimmortal verify --size         # 确认 pack 都同步完整
-4. eimmortal restore <DestDir> --at-latest --anchor <水位码>
-5. eimmortal verify --deep --source <DestDir>
+4. eimmortal restore <DestDir>     # 省略 --at 即还原最新快照
+5. eimmortal verify --deep         # 全量逐切片解密校验（最彻底）
 
 == 定期演练（不做演练等于没有备份） ==
 - 每月：eimmortal verify --sample 8
 - 每季度：在空临时目录 restore 并抽样比对内容、mode、mtime
 - 每半年：完整 restore 到外部磁盘一次
 - 每年：用 Armor Key 重新 import-key 一次，证明抄件仍可用
-`, created, toolVersion, m.VaultID, params.Time, params.MemoryKiB, params.Threads, params.KeyLen, MetaFileName)
+`, created, toolVersion, m.VaultID, params.Time, params.MemoryKiB, params.Threads, params.KeyLen, controlDir)
 }

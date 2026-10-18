@@ -1,0 +1,120 @@
+# =============================================================================
+# eimmortal 示例配置
+# =============================================================================
+# 用法：
+#   mkdir -p ~/.config/eimmortal
+#   cp config.example.toml ~/.config/eimmortal/config.toml
+#   chmod 600 ~/.config/eimmortal/config.toml
+#   $EDITOR ~/.config/eimmortal/config.toml      # 至少改掉 target_dir
+#
+# 规则：
+#   - 权限必须是 0600；组/其他用户可读会被拒绝启动（退出码 2）。
+#   - 绝不能出现 password / passphrase / secret / master_key 一类字段；
+#     主密码只能交互输入，或通过 --password-fd / --password-file 传入。
+#   - 被注释掉的键表示“使用默认值”，取消注释即可覆盖。
+#   - 标注“未实现”的键当前版本只解析、不生效，保留给后续版本。
+# =============================================================================
+
+[vault]
+# 控制平面目录：vault.meta / state.db / lock / RECOVERY.txt 都在这里。
+# 默认 ~/.eimmortal/eimmortal-vault，一般不用写。
+# 注意：
+#   1) 支持 "~/" 开头（会被展开成家目录）；
+#   2) 绝不能放进 iCloud / Dropbox / OneDrive 等同步目录；
+#   3) 不要与 target_dir 相同，也不要互相包含。
+# dir = "/Users/you/.eimmortal/eimmortal-vault"
+
+[storage]
+# 数据平面：网盘负责同步的密文目录（data/、meta/、.tmp/）。必填。
+# 支持 "~/" 开头；不能是源目录本身，也不能与源目录互相包含。
+target_dir = "/Users/you/QuarkDrive/eimmortal"
+
+# 暂存区：先写这里，再原子改名进 data/。
+# 留空 = <target_dir>/.tmp（推荐）。只有 target_dir 所在卷不适合写临时文件时才改，
+# 且必须与 target_dir 同卷，否则 doctor 会报错。
+# staging_dir = ""
+
+# 单个 pack 文件的大小上限（字节）。128 MiB = 134217728。
+# 调小 → 同步/重传粒度更细，但 pack 数量与 journal 元数据更多。
+# 必须满足 slice_plain_bytes + 50 <= pack_max_bytes。
+# pack_max_bytes = 134217728
+
+# 单个切片（slice）的明文上限（字节）。32 MiB = 33554432。
+# 随机读取以切片为单位：调大吞吐更高，调小读取粒度更细。
+# 线格式硬上限 64 MiB，且必须满足 slice_plain_bytes + 50 <= pack_max_bytes。
+# slice_plain_bytes = 33554432
+
+# 不超过该大小的文件整文件放进 pack（不再切片）。64 MiB = 67108864。
+# 必须满足 small_file_bytes + 50 <= pack_max_bytes。
+# small_file_bytes = 67108864
+
+# 单次 backup 最多写入的明文数据量（MiB），必须 > 0。默认 256。
+# 超出后本次提交会截断并提示，剩余改动留给下一次 backup。
+# 首次全量备份大目录时可临时调大，例如 10240（10 GiB）。
+# session_max_mib = 256
+
+[codec]
+# zstd 压缩级别，1..22，默认 5。压缩发生在加密之前。
+#   1-3   最快，体积较大，适合追速度的日常增量
+#   5     默认，均衡
+#   9     文档/源码为主，体积再小 5-15%
+#   19    长期归档，约为默认速度的 1/10
+# 已压缩格式（JPEG/MP4/ZIP/密文）会被采样识别，直接 codec=none 存储。
+# zstd_level = 5
+
+# 小于该字节数的切片不压缩（省掉压缩头开销），0..1048576。默认 4096。
+# min_compress_bytes = 4096
+
+[scan]
+# 扫描模式：
+#   fast   = 用 mtime + size 判断变化（默认，快）
+#   strict = 每次都做全文件 hash 比对（慢，但不怕 mtime 被篡改）
+# 命令行 backup --strict 等价于对本次强制 strict。
+# mode = "fast"
+
+# 排除规则（相对源目录的 glob，可多条）：
+#   "*.tmp"     匹配任意层级以 .tmp 结尾的文件
+#   "dir/**"    匹配 dir 整个子树
+#   "a/b.txt"   精确路径
+# 命令行 --exclude 会追加到这里。
+# exclude = [".git/**", "node_modules/**", "*.tmp", ".DS_Store"]
+
+# 硬链接处理：
+#   error = 遇到硬链接直接报错（默认，避免静默丢语义）
+#   split = 显式接受降级，把每个硬链接当独立文件分别备份
+# follow_hardlinks = "error"
+
+# 是否忽略 xattr / ACL：
+#   false = 遇到扩展属性直接报错（默认）
+#   true  = 显式接受 xattr 无法还原
+# macOS 建议设为 true：否则 com.apple.provenance / com.apple.quarantine
+# 会让 backup 直接以退出码 21 失败；代价是 xattr 不会在还原时保留。
+ignore_xattr = true
+
+# 稀疏文件容忍上限（字节）：
+#   0 = 不支持稀疏文件，遇到就报错（默认）
+# 只有确认愿意按逻辑大小展开存储时才调大。
+# sparse_max_bytes = 0
+
+[on_change_during_read]
+# 读取过程中源文件被修改时的策略：
+#   retry = 重试该文件（默认）
+#   skip  = 跳过该文件并在结果中报告
+#   fail  = 整次 backup 失败
+# strategy = "retry"
+
+[concurrency]
+# 哈希并发数（未实现：当前版本不读取该值，保留字段）。
+# hashers = 4
+
+# pack 写入并发数（未实现：当前版本不读取该值；但配置校验要求 >= 1）。
+# pack_writers = 2
+
+[checkpoint]
+# checkpoint journal 生成策略（未实现：v1 不生成 checkpoint，保留字段）。
+# every_commits = 256
+# max_age_days  = 30
+
+[verify]
+# 每 N 次 backup 自动做一次 strict 校验（未实现：当前版本不自动触发，保留字段）。
+# auto_strict_every = 30

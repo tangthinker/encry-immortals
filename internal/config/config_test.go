@@ -64,6 +64,25 @@ func TestLoadMissingFileUsesDefaults(t *testing.T) {
 	}
 }
 
+func TestLoadExpandsVaultDir(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	path := writeConfig(t, `[vault]
+dir = "~/vault-test"
+
+[storage]
+target_dir = "/tmp/target"
+`)
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := filepath.Join(home, "vault-test")
+	if cfg.Vault.Dir != want {
+		t.Fatalf("vault dir = %q, want %q", cfg.Vault.Dir, want)
+	}
+}
+
 func TestRejectSecrets(t *testing.T) {
 	path := writeConfig(t, `[storage]
 target_dir = "/tmp/target"
@@ -125,31 +144,62 @@ func TestParamsSnapshot(t *testing.T) {
 		t.Fatalf("String() = %q", cfg.String())
 	}
 }
-func TestLegacyDefaultsArePickedUp(t *testing.T) {
+func TestDefaultVaultDir(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
-	if err := os.MkdirAll(filepath.Join(home, ".config", "apex-vault"), 0o700); err != nil {
+	want := filepath.Join(home, ".eimmortal", "eimmortal-vault")
+	if got := Default().Vault.Dir; got != want {
+		t.Fatalf("default vault dir = %q, want %q", got, want)
+	}
+}
+
+func TestDefaultVaultDirPrecedence(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	// Only the pre-rename path exists: keep using it.
+	apexVault := filepath.Join(home, ".config", "apex-vault")
+	if err := os.MkdirAll(apexVault, 0o700); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.MkdirAll(filepath.Join(home, ".config", "apex"), 0o700); err != nil {
+	if got := Default().Vault.Dir; got != apexVault {
+		t.Fatalf("apex vault dir not picked up: %q", got)
+	}
+
+	// The 0.1 path wins over the pre-rename one.
+	renamedVault := filepath.Join(home, ".config", "eimmortal-vault")
+	if err := os.MkdirAll(renamedVault, 0o700); err != nil {
 		t.Fatal(err)
 	}
+	if got := Default().Vault.Dir; got != renamedVault {
+		t.Fatalf("eimmortal-vault should win over apex-vault: %q", got)
+	}
+
+	// The new ~/.eimmortal path wins over both.
+	newVault := filepath.Join(home, ".eimmortal", "eimmortal-vault")
+	if err := os.MkdirAll(newVault, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if got := Default().Vault.Dir; got != newVault {
+		t.Fatalf("~/.eimmortal should win over legacy paths: %q", got)
+	}
+}
+
+func TestLegacyConfigPathIsPickedUp(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
 	legacyCfg := filepath.Join(home, ".config", "apex", "config.toml")
+	if err := os.MkdirAll(filepath.Dir(legacyCfg), 0o700); err != nil {
+		t.Fatal(err)
+	}
 	if err := os.WriteFile(legacyCfg, []byte("[storage]\ntarget_dir = \"/tmp/legacy\"\n"), 0o600); err != nil {
 		t.Fatal(err)
-	}
-	if got := Default().Vault.Dir; got != filepath.Join(home, ".config", "apex-vault") {
-		t.Fatalf("legacy vault dir not picked up: %q", got)
 	}
 	if got := DefaultPath(); got != legacyCfg {
 		t.Fatalf("legacy config path not picked up: %q", got)
 	}
 
-	// As soon as the new paths exist they win.
-	newVault := filepath.Join(home, ".config", "eimmortal-vault")
-	if err := os.MkdirAll(newVault, 0o700); err != nil {
-		t.Fatal(err)
-	}
+	// As soon as the current config path exists it wins.
 	newCfg := filepath.Join(home, ".config", "eimmortal", "config.toml")
 	if err := os.MkdirAll(filepath.Dir(newCfg), 0o700); err != nil {
 		t.Fatal(err)
@@ -157,10 +207,7 @@ func TestLegacyDefaultsArePickedUp(t *testing.T) {
 	if err := os.WriteFile(newCfg, []byte("[storage]\ntarget_dir = \"/tmp/new\"\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if got := Default().Vault.Dir; got != newVault {
-		t.Fatalf("new vault dir should win: %q", got)
-	}
 	if got := DefaultPath(); got != newCfg {
-		t.Fatalf("new config path should win: %q", got)
+		t.Fatalf("current config path should win: %q", got)
 	}
 }
