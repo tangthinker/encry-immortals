@@ -21,18 +21,20 @@
 
 ## 工作原理
 
-```text
-源目录 ──scan/hash──► eimmortal backup ──encrypt──► <TargetDir>/
-                                                       data/YYYY-MM/pack_*.dat
-                                                       meta/00000001.journal
-                                                       meta/manifests/*.manifest
-                                                       .eimmortal.lock
-                                                              │
-                                                              │ 网盘同步（只看得到密文）
-                                                              ▼
-                                      ~/.eimmortal/eimmortal-vault/
-                                        vault.meta / state.db / RECOVERY.txt
-                                        （控制平面，绝不同步）
+```mermaid
+flowchart LR
+    SRC["源目录"] --> SCAN["扫描 / 哈希"]
+    SCAN --> BACKUP["backup 管线<br/>切片 · 压缩 · 加密"]
+
+    subgraph TARGET["TargetDir：交给网盘同步"]
+        direction TB
+        DATA["data/YYYY-MM/pack_*.dat"]
+        JOURNAL["meta/00000001.journal"]
+        MANIFEST["meta/manifests/*.manifest"]
+    end
+
+    BACKUP --> TARGET
+    BACKUP <--> VAULT["控制平面<br/>~/.eimmortal/eimmortal-vault<br/>vault.meta / state.db"]
 ```
 
 - **pack** 是数据块（≤128 MiB），只追加。
@@ -40,6 +42,18 @@
 - **manifest** 是每个 pack 的加密小索引，记录这个 pack 里有哪些文件/切片，用于渐进恢复。
 - **锚点** 保存在本地 `state.db`，用来发现云端把 journal 回滚到旧版本。
 - **控制平面与数据平面分离**：`vault.meta`、`state.db` 只在本地，TargetDir 只有密文。
+
+一次 backup 的提交过程：
+
+```mermaid
+flowchart TD
+    A["扫描源目录<br/>mtime + size，--strict 时 hash"] --> B["计算变更<br/>ADD / MODIFY / DELETE / MKDIR ..."]
+    B --> C["切片 + zstd + 加密<br/>每个切片独立 nonce"]
+    C --> D["写入同级暂存区<br/>TargetDir.tmp"]
+    D --> E["原子 rename 到 data/YYYY-MM/"]
+    E --> F["写 journal + 每个 pack 的 manifest"]
+    F --> G["更新本地 state.db 与锚点"]
+```
 
 ## 快速开始
 
@@ -124,6 +138,17 @@ eimmortal restore /tmp/eimmortal-restore
 ## 渐进恢复（边下载边恢复）
 
 云端还没同步完也可以先恢复已下载的部分：
+
+```mermaid
+flowchart TD
+    A["同步 TargetDir 里的<br/>journal + manifest（很小）"] --> B["restore --list-packs"]
+    B --> C{"需要的 pack 都在本地？"}
+    C -->|是| D["restore 完成<br/>退出码 0"]
+    C -->|否| E["restore --skip-missing-packs"]
+    E --> F["恢复已下载 pack 对应的文件<br/>缺 pack 的列出，退出码 13"]
+    F --> G["继续下载 pack"]
+    G --> C
+```
 
 ```bash
 # 看快照需要哪些 pack、是否已下载
