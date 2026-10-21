@@ -150,6 +150,31 @@ flowchart TD
     G --> C
 ```
 
+```mermaid
+sequenceDiagram
+    autonumber
+    actor U as 用户
+    participant CLI as eimmortal
+    participant T as TargetDir（本地）
+    participant C as 云盘客户端
+    participant V as 云端
+
+    U->>CLI: restore DestDir --skip-missing-packs
+    CLI->>T: 读取 journal + manifest
+    CLI->>T: 检查需要的 pack 是否存在、大小是否一致
+    T-->>CLI: 已下载 pack + 缺失 pack 列表
+    CLI->>T: 恢复已下载 pack 对应的文件
+    CLI-->>U: 汇总（缺 N 个 pack，跳过 M 个文件）
+    Note over CLI,U: 退出码 13（数据不完整）
+    U->>C: 继续下载缺失的 pack
+    C->>V: 拉取 pack
+    V-->>C: pack 数据
+    C->>T: 写入 TargetDir
+    U->>CLI: 重跑同一条 restore
+    CLI->>T: 再次检查并恢复剩余文件
+    CLI-->>U: 完成，退出码 0
+```
+
 ```bash
 # 看快照需要哪些 pack、是否已下载
 eimmortal restore --list-packs
