@@ -21,21 +21,37 @@
 
 ## 工作原理
 
+### 两平面架构
+
 ```mermaid
 flowchart LR
-    SRC["源目录"] --> SCAN["扫描 / 哈希"]
+    SRC(["源目录"]) --> SCAN["扫描 / 哈希"]
     SCAN --> BACKUP["backup 管线<br/>切片 · 压缩 · 加密"]
 
     subgraph TARGET["TargetDir：交给网盘同步"]
         direction TB
-        DATA["data/YYYY-MM/pack_*.dat"]
-        JOURNAL["meta/00000001.journal"]
-        MANIFEST["meta/manifests/*.manifest"]
+        DATA[("data/YYYY-MM/<br/>pack_*.dat")]
+        JOURNAL[("meta/<br/>00000001.journal")]
+        MANIFEST[("meta/manifests/<br/>pack_*.manifest")]
     end
 
     BACKUP --> TARGET
     BACKUP <--> VAULT["控制平面<br/>~/.eimmortal/eimmortal-vault<br/>vault.meta / state.db"]
+    TARGET -.->|网盘客户端同步| CLOUD["网盘 / 云端"]
+
+    classDef entry fill:#FFF7ED,stroke:#F97316,stroke-width:2px,color:#9A3412
+    classDef process fill:#EFF6FF,stroke:#3B82F6,stroke-width:2px,color:#1E3A8A
+    classDef storage fill:#FAF5FF,stroke:#9333EA,stroke-width:2px,color:#6B21A8
+    classDef local fill:#F4F4F5,stroke:#71717A,stroke-width:2px,color:#3F3F46
+    classDef cloud fill:#F8FAFC,stroke:#94A3B8,stroke-width:2px,color:#334155
+    class SRC entry
+    class SCAN,BACKUP process
+    class DATA,JOURNAL,MANIFEST storage
+    class VAULT local
+    class CLOUD cloud
 ```
+
+> 图中颜色只表示语义：橙 = 入口/决策，蓝 = 处理，紫 = 存储，灰 = 本地控制平面，绿 = 成功，红 = 缺失/失败。
 
 - **pack** 是数据块（≤128 MiB），只追加。
 - **journal** 是提交记录，记录 ADD/MODIFY/DELETE/MKDIR 等操作和 pack 指纹；多个 journal 用哈希链串起来。
@@ -43,16 +59,33 @@ flowchart LR
 - **锚点** 保存在本地 `state.db`，用来发现云端把 journal 回滚到旧版本。
 - **控制平面与数据平面分离**：`vault.meta`、`state.db` 只在本地，TargetDir 只有密文。
 
-一次 backup 的提交过程：
+### 一次 backup 的提交过程
 
 ```mermaid
 flowchart TD
-    A["扫描源目录<br/>mtime + size，--strict 时 hash"] --> B["计算变更<br/>ADD / MODIFY / DELETE / MKDIR ..."]
-    B --> C["切片 + zstd + 加密<br/>每个切片独立 nonce"]
-    C --> D["写入同级暂存区<br/>TargetDir.tmp"]
-    D --> E["原子 rename 到 data/YYYY-MM/"]
-    E --> F["写 journal + 每个 pack 的 manifest"]
-    F --> G["更新本地 state.db 与锚点"]
+    A(["backup --source"]) --> B["扫描源目录<br/>mtime + size<br/>--strict 时 hash"]
+    B --> C{"有变更？"}
+    C -->|否| N["no changes<br/>退出码 0"]
+    C -->|是| D["计算变更<br/>ADD / MODIFY / DELETE / MKDIR"]
+    D --> E["切片 + zstd + 加密<br/>每片独立 nonce"]
+    E --> F[("同级暂存区<br/>TargetDir.tmp")]
+    F --> G["原子 rename<br/>到 data/YYYY-MM/"]
+    G --> H["写 journal +<br/>每个 pack 的 manifest"]
+    H --> I["更新 state.db / 锚点"]
+    I --> J(["提交完成"])
+
+    classDef entry fill:#FFF7ED,stroke:#F97316,stroke-width:2px,color:#9A3412
+    classDef process fill:#EFF6FF,stroke:#3B82F6,stroke-width:2px,color:#1E3A8A
+    classDef decision fill:#FFEDD5,stroke:#F97316,stroke-width:2px,color:#9A3412
+    classDef storage fill:#FAF5FF,stroke:#9333EA,stroke-width:2px,color:#6B21A8
+    classDef success fill:#F0FDF4,stroke:#22C55E,stroke-width:2px,color:#166534
+    classDef muted fill:#F4F4F5,stroke:#A1A1AA,stroke-width:2px,color:#52525B
+    class A entry
+    class B,D,E,G,H,I process
+    class C decision
+    class F storage
+    class N muted
+    class J success
 ```
 
 ## 快速开始
@@ -137,42 +170,64 @@ eimmortal restore /tmp/eimmortal-restore
 
 ## 渐进恢复（边下载边恢复）
 
-云端还没同步完也可以先恢复已下载的部分：
+云端还没同步完也可以先恢复已下载的部分。
+
+### 渐进恢复流程
 
 ```mermaid
 flowchart TD
-    A["同步 TargetDir 里的<br/>journal + manifest（很小）"] --> B["restore --list-packs"]
+    A(["云端 pack 未齐"]) --> B["restore --list-packs"]
     B --> C{"需要的 pack 都在本地？"}
     C -->|是| D["restore 完成<br/>退出码 0"]
     C -->|否| E["restore --skip-missing-packs"]
-    E --> F["恢复已下载 pack 对应的文件<br/>缺 pack 的列出，退出码 13"]
-    F --> G["继续下载 pack"]
-    G --> C
+    E --> F["恢复已下载 pack 的文件<br/>缺失文件记录在案"]
+    F --> G["列出缺失 pack<br/>退出码 13"]
+    G --> H["云盘客户端继续下载"]
+    H --> C
+
+    classDef entry fill:#FFF7ED,stroke:#F97316,stroke-width:2px,color:#9A3412
+    classDef process fill:#EFF6FF,stroke:#3B82F6,stroke-width:2px,color:#1E3A8A
+    classDef decision fill:#FFEDD5,stroke:#F97316,stroke-width:2px,color:#9A3412
+    classDef success fill:#F0FDF4,stroke:#22C55E,stroke-width:2px,color:#166534
+    classDef danger fill:#FEF2F2,stroke:#EF4444,stroke-width:2px,color:#991B1B
+    class A entry
+    class B,E,F,H process
+    class C decision
+    class D success
+    class G danger
 ```
+
+### 恢复时序
 
 ```mermaid
 sequenceDiagram
     autonumber
     actor U as 用户
     participant CLI as eimmortal
-    participant T as TargetDir（本地）
+    participant T as TargetDir 本地
     participant C as 云盘客户端
     participant V as 云端
 
     U->>CLI: restore DestDir --skip-missing-packs
     CLI->>T: 读取 journal + manifest
-    CLI->>T: 检查需要的 pack 是否存在、大小是否一致
-    T-->>CLI: 已下载 pack + 缺失 pack 列表
-    CLI->>T: 恢复已下载 pack 对应的文件
-    CLI-->>U: 汇总（缺 N 个 pack，跳过 M 个文件）
-    Note over CLI,U: 退出码 13（数据不完整）
-    U->>C: 继续下载缺失的 pack
-    C->>V: 拉取 pack
-    V-->>C: pack 数据
-    C->>T: 写入 TargetDir
-    U->>CLI: 重跑同一条 restore
-    CLI->>T: 再次检查并恢复剩余文件
-    CLI-->>U: 完成，退出码 0
+    CLI->>T: 检查 pack 是否存在、大小一致
+    T-->>CLI: 已下载 / 缺失列表
+
+    alt 没有缺失 pack
+        CLI->>T: 恢复剩余文件
+        CLI-->>U: 完成（退出码 0）
+    else 有缺失 pack
+        CLI->>T: 恢复已下载 pack 的文件
+        CLI-->>U: 部分完成 + 缺失列表（退出码 13）
+        Note over CLI,U: 13 表示“还不完整”，不是数据损坏
+        U->>C: 继续下载缺失 pack
+        C->>V: 拉取 pack
+        V-->>C: pack 数据
+        C->>T: 写入 TargetDir
+        U->>CLI: 重跑同一条 restore
+        CLI->>T: 再次检查并恢复剩余文件
+        CLI-->>U: 仍有缺失则 13，全部完成则 0
+    end
 ```
 
 ```bash
