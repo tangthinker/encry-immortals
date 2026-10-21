@@ -49,6 +49,7 @@ for target in "${targets[@]}"; do
       -o "${dir}/${bin}" ./cmd/eimmortal
 
   cp README.md config.example.toml "$dir/"
+  cp -R docs "$dir/"
 
   if [ "$goos" = "windows" ]; then
     (cd "$out" && zip -qr "${name}.zip" "${name}")
