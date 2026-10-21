@@ -62,31 +62,27 @@ flowchart LR
 ### 一次 backup 的提交过程
 
 ```mermaid
-flowchart TD
-    A(["backup --source"]) --> B["扫描源目录<br/>mtime + size<br/>--strict 时 hash"]
+flowchart LR
+    A(["backup --source"]) --> B["① 扫描与变更检测<br/>mtime + size<br/>--strict 时 hash"]
     B --> C{"有变更？"}
     C -->|否| N["no changes<br/>退出码 0"]
-    C -->|是| D["计算变更<br/>ADD / MODIFY / DELETE / MKDIR"]
-    D --> E["切片 + zstd + 加密<br/>每片独立 nonce"]
-    E --> F[("同级暂存区<br/>TargetDir.tmp")]
-    F --> G["原子 rename<br/>到 data/YYYY-MM/"]
-    G --> H["写 journal +<br/>每个 pack 的 manifest"]
-    H --> I["更新 state.db / 锚点"]
-    I --> J(["提交完成"])
+    C -->|是| D["② 加密写入<br/>切片 + zstd + 加密<br/>暂存 → 原子 rename"]
+    D --> E["③ 提交<br/>journal + 每个 pack manifest<br/>更新 state.db / 锚点"]
+    E --> F(["提交完成"])
 
     classDef entry fill:#FFF7ED,stroke:#F97316,stroke-width:2px,color:#9A3412
     classDef process fill:#EFF6FF,stroke:#3B82F6,stroke-width:2px,color:#1E3A8A
     classDef decision fill:#FFEDD5,stroke:#F97316,stroke-width:2px,color:#9A3412
-    classDef storage fill:#FAF5FF,stroke:#9333EA,stroke-width:2px,color:#6B21A8
     classDef success fill:#F0FDF4,stroke:#22C55E,stroke-width:2px,color:#166534
     classDef muted fill:#F4F4F5,stroke:#A1A1AA,stroke-width:2px,color:#52525B
     class A entry
-    class B,D,E,G,H,I process
+    class B,D,E process
     class C decision
-    class F storage
     class N muted
-    class J success
+    class F success
 ```
+
+② 先写同级暂存区，再原子 rename 到 `data/`；③ 成功后才写 journal/manifest 并更新本地锚点。
 
 ## 快速开始
 
@@ -175,15 +171,12 @@ eimmortal restore /tmp/eimmortal-restore
 ### 渐进恢复流程
 
 ```mermaid
-flowchart TD
-    A(["云端 pack 未齐"]) --> B["restore --list-packs"]
-    B --> C{"需要的 pack 都在本地？"}
-    C -->|是| D["restore 完成<br/>退出码 0"]
-    C -->|否| E["restore --skip-missing-packs"]
-    E --> F["恢复已下载 pack 的文件<br/>缺失文件记录在案"]
-    F --> G["列出缺失 pack<br/>退出码 13"]
-    G --> H["云盘客户端继续下载"]
-    H --> C
+flowchart LR
+    A(["云端 pack 未齐"]) --> B["① 盘点<br/>restore --list-packs<br/>检查 pack 是否齐全"]
+    B --> C{"齐全？"}
+    C -->|是| D(["完成<br/>退出码 0"])
+    C -->|否| E["② 补齐<br/>restore --skip-missing-packs<br/>恢复已下载文件<br/>列出缺失 pack（退出码 13）"]
+    E -->|补齐后重跑| B
 
     classDef entry fill:#FFF7ED,stroke:#F97316,stroke-width:2px,color:#9A3412
     classDef process fill:#EFF6FF,stroke:#3B82F6,stroke-width:2px,color:#1E3A8A
@@ -191,10 +184,10 @@ flowchart TD
     classDef success fill:#F0FDF4,stroke:#22C55E,stroke-width:2px,color:#166534
     classDef danger fill:#FEF2F2,stroke:#EF4444,stroke-width:2px,color:#991B1B
     class A entry
-    class B,E,F,H process
+    class B process
     class C decision
     class D success
-    class G danger
+    class E danger
 ```
 
 ### 恢复时序
