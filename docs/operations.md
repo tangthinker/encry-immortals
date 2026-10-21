@@ -38,12 +38,11 @@ macOS 注意：
 同步范围：
 
 ```text
-<TargetDir>/output/     ← 建议只同步这里
-<TargetDir>/.tmp/       ← 本地暂存，排除
-<TargetDir>/.eimmortal.lock  ← 写入期间的本地锁，排除
+<TargetDir>/                 ← 同步 data/、meta/ 与短暂的 lock
+<TargetDir>.tmp/             ← 同级暂存区，不在 TargetDir 内，不要同步
 ```
 
-如果客户端只能同步整个 `<TargetDir>`，请在客户端排除 `.tmp/` 和 `.eimmortal.lock`。注意：只同步 `output/` 时，另一台机器看不到 `.eimmortal.lock` 这个跨机写者记录；跨机并发仍会被 journal 的严格 seq 在提交时发现，但不会提前阻止。
+暂存区是 TargetDir 同级的 `<TargetDir>.tmp`；如果同步根是 TargetDir，它不会被同步；如果同步的是父目录，请排除它，或用 `storage.staging_dir` 指到同卷、同步范围外的路径。`.eimmortal.lock` 在 TargetDir 根目录，只在写入期间存在，可以在客户端排除。
 
 云盘客户端可能：
 
@@ -71,13 +70,13 @@ macOS 注意：
 - `verify --sample N`：随机抽 N 个 pack 做整包 SHA-256
 - `verify --deep`：全量解密、逐切片校验（最彻底，最慢）
 
-`doctor` 检查控制平面位置、TargetDir 白名单、布局（`output/` 或旧布局）、暂存区同卷/残留、journal 序号、哈希链、锚点、孤儿 pack。`doctor --camouflage` 额外检查扩展名和 pack 文件头。
+`doctor` 检查控制平面位置、TargetDir 白名单、布局（根目录，或 v0.1.3/0.1.4 的 `output/` 兼容布局）、暂存区同卷/残留、journal 序号、哈希链、锚点、孤儿 pack。`doctor --camouflage` 额外检查扩展名和 pack 文件头。
 
 ## 4. 灾备恢复
 
 需要三样东西，缺一不可：
 
-1. TargetDir 里同步出去的 `output/data` + `output/meta`
+1. TargetDir 里同步出去的 `data/` + `meta/`
 2. Armor Key（`EIMMORTAL-KEY-V2-…`）
 3. 主密码
 
@@ -153,7 +152,7 @@ eimmortal gc --dry-run
 eimmortal gc --prune-orphans --yes
 ```
 
-`gc` 清理 `.tmp` 里超过 24h 的残留、从未被 journal 引用的孤儿 pack，以及孤儿 manifest；它**不会**删除云端文件。
+`gc` 清理暂存区（`<TargetDir>.tmp`）里超过 24h 的残留、从未被 journal 引用的孤儿 pack，以及孤儿 manifest；它**不会**删除云端文件。
 
 常见错误：
 
@@ -180,4 +179,4 @@ eimmortal gc --prune-orphans --yes
 - 同一 TargetDir 只允许一个写者；本地用 flock + `.eimmortal.lock`，提交时用严格 seq 再检查一次。
 - 换机器恢复用 `init --join` + `import-key`；不要复制 `state.db`，它只是缓存，`rebuild-state` 可以重建。
 - 控制平面（`~/.eimmortal/eimmortal-vault`）每台机器各自一份，**绝不同步**。
-- 如果只同步 `output/`，跨机锁文件不会出现在云端；不要让两台机器同时写同一个 TargetDir。
+- 如果客户端排除了 `.eimmortal.lock`，另一台机器看不到这个跨机写者记录；跨机并发仍会被 journal 的严格 seq 在提交时发现，但不会提前阻止。

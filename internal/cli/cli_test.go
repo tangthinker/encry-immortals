@@ -439,7 +439,7 @@ func TestCLIStatusChainAndWaitForPacks(t *testing.T) {
 	}
 
 	// Remove the only pack: restore must wait, then fail with E13 (13).
-	packs, err := filepath.Glob(filepath.Join(env.target, "output", "data", "*", "*.dat"))
+	packs, err := filepath.Glob(filepath.Join(env.target, "data", "*", "*.dat"))
 	if err != nil || len(packs) == 0 {
 		t.Fatalf("no packs found: %v", err)
 	}

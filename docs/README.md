@@ -9,7 +9,7 @@
 | 第一次安装、初始化、备份、恢复 | [usage.md](usage.md) |
 | 日常运维、定时备份、云端同步、灾备演练、容量/压缩/性能 | [operations.md](operations.md) |
 | 评估安全性、密钥管理、威胁模型 | [security.md](security.md) |
-| 从旧版本升级、把旧布局迁到 `output/`、apex 旧名兼容 | [migration.md](migration.md) |
+| 从旧版本升级、把旧 `output/` 布局迁回根目录、apex 旧名兼容 | [migration.md](migration.md) |
 | 参与开发、跑测试、CI、发布流程 | [development.md](development.md) |
 | 所有配置项和默认值 | [../config.example.toml](../config.example.toml) |
 | 字节级格式、协议、崩溃恢复、验收标准 | [spec/README.md](spec/README.md) |

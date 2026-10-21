@@ -156,58 +156,61 @@ func TestLayoutAcceptsLegacyLockName(t *testing.T) {
 	}
 }
 
-func TestOutputLayoutPaths(t *testing.T) {
+func TestRootLayoutPaths(t *testing.T) {
 	root := t.TempDir()
 	l, err := NewLayout(root, "")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !l.UsesOutputDir() {
-		t.Fatal("an empty TargetDir should use the output/ layout")
+	if l.UsesOutputDir() {
+		t.Fatal("an empty TargetDir must use the root layout")
 	}
-	if l.RootDir != root || l.TargetDir != filepath.Join(root, OutputDirName) {
+	if l.RootDir != root || l.TargetDir != root {
 		t.Fatalf("unexpected roots: %+v", l)
 	}
-	if l.DataDir != filepath.Join(root, OutputDirName, DataDirName) ||
-		l.MetaDir != filepath.Join(root, OutputDirName, MetaDirName) ||
-		l.StagingDir != filepath.Join(root, StagingDirName) {
+	if l.DataDir != filepath.Join(root, DataDirName) ||
+		l.MetaDir != filepath.Join(root, MetaDirName) ||
+		l.StagingDir != root+StagingDirName {
 		t.Fatalf("unexpected paths: %+v", l)
 	}
 	if err := l.Ensure(); err != nil {
 		t.Fatal(err)
 	}
-	for _, dir := range []string{l.RootDir, l.OutputDir, l.DataDir, l.MetaDir, l.StagingDir} {
+	for _, dir := range []string{l.RootDir, l.DataDir, l.MetaDir, l.StagingDir} {
 		if info, err := os.Stat(dir); err != nil || !info.IsDir() {
 			t.Fatalf("%s missing: %v", dir, err)
 		}
 	}
 	if err := l.ValidateTopLevel(); err != nil {
-		t.Fatalf("output layout rejected: %v", err)
+		t.Fatalf("root layout rejected: %v", err)
+	}
+	if err := l.ValidateStagingVolume(); err != nil {
+		t.Fatalf("sibling staging should share the target volume: %v", err)
 	}
 }
 
-func TestLegacyLayoutDetection(t *testing.T) {
+func TestOutputCompatDetection(t *testing.T) {
 	root := t.TempDir()
-	if err := os.MkdirAll(filepath.Join(root, DataDirName), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Join(root, OutputDirName, DataDirName), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.MkdirAll(filepath.Join(root, MetaDirName), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Join(root, OutputDirName, MetaDirName), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	l, err := NewLayout(root, "")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if l.UsesOutputDir() || l.TargetDir != root {
-		t.Fatalf("legacy layout not detected: %+v", l)
+	if !l.UsesOutputDir() || l.TargetDir != filepath.Join(root, OutputDirName) {
+		t.Fatalf("output compatibility layout not detected: %+v", l)
 	}
-	if l.DataDir != filepath.Join(root, DataDirName) {
-		t.Fatalf("legacy data dir = %s", l.DataDir)
+	if l.StagingDir != root+StagingDirName {
+		t.Fatalf("staging dir = %s", l.StagingDir)
 	}
 	if err := l.Ensure(); err != nil {
 		t.Fatal(err)
 	}
 	if err := l.ValidateTopLevel(); err != nil {
-		t.Fatalf("legacy layout rejected: %v", err)
+		t.Fatalf("output compatibility layout rejected: %v", err)
 	}
 }

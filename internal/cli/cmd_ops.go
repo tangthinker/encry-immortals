@@ -61,16 +61,16 @@ func cmdDoctor(a *App, g *globalFlags, args []string) error {
 			if verr := layout.ValidateTopLevel(); verr != nil {
 				add("TargetDir 白名单", "FAIL", verr.Error())
 			} else {
-				detail := "只包含 .tmp/、.eimmortal.lock、data/、meta/（忽略 .DS_Store）"
+				detail := "只包含 .eimmortal.lock、data/、meta/（旧 .tmp/ 允许；.DS_Store 忽略）"
 				if layout.UsesOutputDir() {
 					detail = "只包含 .tmp/、.eimmortal.lock、output/（忽略 .DS_Store）"
 				}
 				add("TargetDir 白名单", "PASS", detail)
 			}
 			if layout.UsesOutputDir() {
-				add("TargetDir 布局", "PASS", "output/data + output/meta")
+				add("TargetDir 布局", "WARN", "旧 output 布局（v0.1.3/0.1.4）；建议迁回 TargetDir 根目录，见 README")
 			} else {
-				add("TargetDir 布局", "WARN", "旧布局（data/meta 在根目录）；迁移见 README")
+				add("TargetDir 布局", "PASS", "data/meta 在 TargetDir 根目录；暂存区在同级 "+filepath.Base(layout.StagingDir))
 			}
 			if verr := layout.ValidateStagingVolume(); verr != nil {
 				add("暂存区同卷", "FAIL", verr.Error())

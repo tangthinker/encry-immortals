@@ -46,7 +46,7 @@ eimmortal 的目标是：**把备份交给不完全信任的网盘，同时不�
 | 主密码 | 只在你的脑子里/密码管理器 | **不可更改**；忘记即永久无法恢复 |
 | Armor Key | `eimmortal export-key` 输出 | 只含 salt/KDF 参数 + CRC，**不含密钥**；与密码分开存放 |
 | 控制平面 | `~/.eimmortal/eimmortal-vault/`（0700） | **绝不放进同步目录**；`vault.meta` 0600 |
-| 密文数据 | `<TargetDir>/output/` | 可以放网盘；不要放密钥/明文提示 |
+| 密文数据 | `<TargetDir>/`（`data/`、`meta/`） | 可以放网盘；不要放密钥/明文提示 |
 
 最低要求：
 

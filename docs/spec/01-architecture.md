@@ -12,23 +12,23 @@
 
 <SourceDir>/                           # 数据源区，任意位置，只读访问
 
-<TargetDir>/                           # 存储平面根目录
-  .tmp/                                # [同卷暂存区] 见 1.2
+<TargetDir>/                           # 存储平面根目录（网盘同步）
   .eimmortal.lock                      # 跨机持有者记录（不参与 flock，见 1.4）
-  output/                              # 网盘同步的盲盒
-    data/
-      2026-03/                         # 目录分片，见 06
-        pack_1773000000123_a1b2c3.dat
-        pack_1773000045678_d4e5f6.dat
-    meta/
-      00000001.journal
-      00000002.journal
-      manifests/                       # 每个 pack 一个加密记录
+  data/
+    2026-03/                           # 目录分片，见 06
+      pack_1773000000123_a1b2c3.dat
+      pack_1773000045678_d4e5f6.dat
+  meta/
+    00000001.journal
+    00000002.journal
+    manifests/                         # 每个 pack 一个加密记录
+
+<TargetDir>.tmp/                       # [同卷暂存区] 与 TargetDir 同级，见 1.2
 ~~~
 
 **必须**：
 - 控制平面目录权限 `0700`，`vault.meta` 权限 `0600`。
-- `TargetDir` 根目录只允许 `.tmp/`、`.eimmortal.lock`、`output/**`（旧布局为 `data/**`、`meta/**`，仍兼容）；出现任何其他条目视为污染，`backup` 与 `restore` 必须拒绝继续（防止用户在 Target 里放了自己的文件导致同步语义混乱）。
+- `TargetDir` 根目录只允许 `.eimmortal.lock`、`data/**`、`meta/**`（旧版本的 `.tmp/` 仍允许；v0.1.3/0.1.4 的 `output/**` 兼容布局仍可读）；出现任何其他条目视为污染，`backup` 与 `restore` 必须拒绝继续（防止用户在 Target 里放了自己的文件导致同步语义混乱）。
 - `data/` 与 `meta/` 的关系是**单向引用**：journal 引用 pack，pack 永不引用 journal。反向依赖会破坏"pack 是哑存储"的性质。
 
 **禁止**：
@@ -37,28 +37,31 @@
 
 ## 1.2 决策 D-06：staging 区的位置
 
-母方案内部矛盾（第一章说 Target 内，第六章说 Target 同级）。本目录结论：**必须放在 Target 内**，即 `<TargetDir>/.tmp/`。
+结论：默认放在 **TargetDir 同级的 `<TargetDir>.tmp/`**，不再放进 TargetDir 内部。
 
 理由：
-1. `os.Rename` **只在同一文件系统内保证原子且不拷贝**；跨卷时会退化为 copy+delete，产生非原子窗口——正是母方案第六章要消灭的半截文件问题。
-2. "Target 同级"只在两者恰好同卷时成立，不能作为协议级保证。
+1. 暂存区不进入网盘同步范围，避免半截 pack/journal 被客户端上传。
+2. 同级的兄弟目录与 TargetDir 共享父目录，正常布局下天然同卷；仍强制做同卷校验，防止挂载点/符号链接例外。
+3. 若用户把 TargetDir 放在某个同步根的子目录里，兄弟目录可能仍在同步根内；此时可用 `storage.staging_dir` 指向同步根之外的路径，但必须与 TargetDir 同卷。
 
-代价与缓解（代价必须写进文档，不能装作没有）：
+代价与缓解：
 
 | 代价 | 缓解 |
 |---|---|
-| 网盘会同步 `.tmp/` 内的半截文件 | ① 暂存文件同样用 `pack_<ts>_<rand>.dat` 命名，同步上去也只是个"看不懂的分包文件"；② 每次 `backup` 启动时做 orphan sweep：删除 `.tmp/` 中 mtime 早于 24h 的残留 |
-| 云端可能出现极少量垃圾残片 | 接受。`apex status` 统计"云端 pack 数 vs journal 引用数"的差值并提示；不给自动删云端的命令（危险） |
-| 某些网盘对隐藏目录有特殊性 | 提供 `storage.staging_dir` 配置项允许指向 Target 外目录，但启动时**必须**校验同卷（见下） |
+| 暂存区在 TargetDir 外，备份开始时需要创建兄弟目录 | `Ensure` 以 0700 创建；`gc` 清理 24h 残留 |
+| 同级目录不一定在用户的同步范围之外 | 文档明确建议排除；`storage.staging_dir` 可覆盖 |
+| 跨卷时 `rename` 退化为 copy+delete | 启动时强制同卷校验；不一致 fail-fast |
 
-同卷校验（`--staging-dir` 生效时强制执行）：
+同卷校验（默认与 `storage.staging_dir` 生效时都执行）：
 
 ~~~
-dev(target) == dev(staging)   // stat.Sys().(*syscall.Stat_t).Dev / Windows 用 VolumeSerialNumber
+dev(target/data) == dev(staging)
 且 rename(staging/x -> target/data/x) 不返回 EXDEV
 ~~~
 
 向上查找最近的已存在父目录取 `dev`；不一致则 fail-fast 并输出提示文案，禁止"警告后继续"。
+
+旧版本曾在 TargetDir 内使用 `.tmp/`；该目录仍被白名单接受，但新版本不再写入。v0.1.3/0.1.4 的 `output/**` 布局作为兼容读取，不再作为默认。
 
 ## 1.3 控制平面与数据平面的边界（信息流图）
 
@@ -119,7 +122,7 @@ dev(target) == dev(staging)   // stat.Sys().(*syscall.Stat_t).Dev / Windows 用 
 
 ## 1.7 决策记录（摘要）
 
-- **D-06**：staging 固定在 `<TargetDir>/.tmp/`，可选外置但强制同卷校验。
+- **D-06**：staging 默认是 TargetDir 同级的 `<TargetDir>.tmp/`，强制同卷校验；`storage.staging_dir` 可覆盖。
 - **D-15**：三层写者互斥（flock / `.apex.lock` / journal `O_EXCL` + seq 连续性）。
 - **D-18**：不支持项必须 fail-fast，不得静默降级——这是"无损"承诺能成立的边界条件。
 

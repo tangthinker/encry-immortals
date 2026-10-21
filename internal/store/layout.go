@@ -46,20 +46,22 @@ const (
 
 // Layout describes one TargetDir on disk.
 //
-// New vaults keep the cloud-visible payload under <TargetDir>/output/:
+// New vaults keep data/ and meta/ directly under TargetDir and stage packs in a
+// sibling directory (<TargetDir>.tmp, same filesystem, outside the synced
+// directory):
 //
-//	<TargetDir>/.tmp            staging (excluded from the blind box)
+//	<TargetDir>/data            packs
+//	<TargetDir>/meta            journals + manifests
 //	<TargetDir>/.eimmortal.lock writer record
-//	<TargetDir>/output/data     packs
-//	<TargetDir>/output/meta     journals + manifests
+//	<TargetDir>.tmp             staging
 //
-// Older vaults have data/ and meta/ directly under TargetDir; NewLayout detects
-// that layout so they keep working until the user moves the two directories
-// into output/.
+// v0.1.3/v0.1.4 briefly wrote data/meta under <TargetDir>/output/. That layout
+// is still detected so those vaults keep working until the user moves the two
+// directories back up.
 type Layout struct {
-	RootDir     string // outer TargetDir; owns .tmp and the lock
-	TargetDir   string // data/meta base: <RootDir>/output or RootDir (legacy)
-	OutputDir   string // <RootDir>/output for the current layout, empty for legacy
+	RootDir     string // TargetDir; owns the lock and the whitelist
+	TargetDir   string // data/meta base (RootDir, or RootDir/output for v0.1.3+ compat)
+	OutputDir   string // non-empty only for the v0.1.3+ output/ compatibility layout
 	DataDir     string
 	MetaDir     string
 	ManifestDir string
@@ -69,7 +71,7 @@ type Layout struct {
 	StagingExternal bool
 }
 
-// UsesOutputDir reports whether the current layout keeps data/meta under output/.
+// UsesOutputDir reports whether this is the old v0.1.3/v0.1.4 output/ layout.
 func (l *Layout) UsesOutputDir() bool { return l.OutputDir != "" }
 
 // NewLayout resolves target and staging directories to absolute paths.
@@ -83,16 +85,14 @@ func NewLayout(targetDir, stagingOverride string) (*Layout, error) {
 			WithNext("在 config.toml 的 [storage] 段设置 target_dir")
 	}
 	output := filepath.Join(target, OutputDirName)
-	useOutput := true
-	if !pathExists(filepath.Join(output, DataDirName)) && !pathExists(filepath.Join(output, MetaDirName)) {
-		if pathExists(filepath.Join(target, DataDirName)) || pathExists(filepath.Join(target, MetaDirName)) {
-			useOutput = false // legacy layout: data/meta directly under TargetDir
-		}
-	}
+	rootHasData := pathExists(filepath.Join(target, DataDirName)) || pathExists(filepath.Join(target, MetaDirName))
+	outputHasData := pathExists(filepath.Join(output, DataDirName)) || pathExists(filepath.Join(output, MetaDirName))
+	useOutput := !rootHasData && outputHasData // v0.1.3/v0.1.4 compatibility
 	l := &Layout{
-		RootDir:    target,
-		TargetDir:  target,
-		StagingDir: filepath.Join(target, StagingDirName),
+		RootDir:         target,
+		TargetDir:       target,
+		StagingDir:      target + StagingDirName,
+		StagingExternal: true,
 	}
 	if useOutput {
 		l.OutputDir = output
@@ -140,13 +140,16 @@ func pathExists(p string) bool {
 	return err == nil
 }
 
-// Ensure creates the directories eimmortal owns.
+// Ensure creates the directories eimmortal owns. Staging lives outside
+// TargetDir and is kept private (0700).
 func (l *Layout) Ensure() error {
-	dirs := []string{l.RootDir, l.TargetDir, l.DataDir, l.MetaDir, l.ManifestDir, l.StagingDir}
-	for _, dir := range dirs {
+	for _, dir := range []string{l.RootDir, l.TargetDir, l.DataDir, l.MetaDir, l.ManifestDir} {
 		if err := os.MkdirAll(dir, 0o755); err != nil {
 			return apexerr.Wrapf(err, apexerr.CodeNoSpace, "无法创建目录 %s", dir)
 		}
+	}
+	if err := os.MkdirAll(l.StagingDir, 0o700); err != nil {
+		return apexerr.Wrapf(err, apexerr.CodeNoSpace, "无法创建暂存目录 %s", l.StagingDir)
 	}
 	return nil
 }
@@ -200,7 +203,12 @@ func (l *Layout) ValidateStagingVolume() error {
 	if !l.StagingExternal {
 		return nil
 	}
-	same, err := sameVolume(l.StagingDir, l.DataDir)
+	staging := l.StagingDir
+	if _, err := os.Stat(staging); os.IsNotExist(err) {
+		// doctor can run before the first backup; compare the parent instead.
+		staging = filepath.Dir(staging)
+	}
+	same, err := sameVolume(staging, l.DataDir)
 	if err != nil {
 		return apexerr.Wrapf(err, apexerr.CodeUsage, "无法校验暂存区与 Target 是否同卷")
 	}

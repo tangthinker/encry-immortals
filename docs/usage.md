@@ -33,7 +33,7 @@ sudo install -m 755 bin/eimmortal /usr/local/bin/eimmortal
 |---|---|---|
 | 控制平面 | `~/.eimmortal/eimmortal-vault/` | **绝不** |
 | 配置 | `~/.config/eimmortal/config.toml` | 否 |
-| 数据平面（TargetDir） | 配置里的 `target_dir` | 是，同步 `<TargetDir>/output/` |
+| 数据平面（TargetDir） | 配置里的 `target_dir` | 是，同步 `<TargetDir>/` |
 
 控制平面含 `vault.meta`（salt/KDF 参数/auth_verifier/vault_id）、`state.db`（seq 水位、锚点、路径 HMAC 索引）、`RECOVERY.txt`。**它绝不能放进任何同步目录**，否则多台机器会共享锁和状态。
 
@@ -68,15 +68,18 @@ ignore_xattr = true
 
 ```text
 <TargetDir>/
-  .tmp/                       # 同卷暂存区，留在根目录
+  data/YYYY-MM/pack_*.dat
+  meta/00000001.journal
+  meta/manifests/*.manifest
   .eimmortal.lock             # 写锁，写入期间存在
-  output/                     # 给网盘同步的盲盒
-    data/YYYY-MM/pack_*.dat
-    meta/00000001.journal
-    meta/manifests/*.manifest
+  .tmp/                       # 仅旧版本可能残留，允许但不再使用
+
+<TargetDir>.tmp/              # 同级暂存区（同步父目录时排除）
 ```
 
-新库使用 `output/`。旧库如果 `data/`、`meta/` 直接在根目录，会自动识别并继续工作；迁移见 [migration.md](migration.md)。如果网盘客户端同步整个 `<TargetDir>`，请排除 `.tmp/` 和 `.eimmortal.lock`，或直接把同步范围设为 `<TargetDir>/output`。
+新库使用根目录布局。`.tmp` 放在 TargetDir **同级**的 `<TargetDir>.tmp`；同步根是 TargetDir 时不会进入网盘；同步父目录时需要排除它，或用 `storage.staging_dir` 指到同卷、同步范围外的路径。lock 仍在 TargetDir 根目录，只在写入期间存在。
+
+v0.1.3/v0.1.4 曾把 `data/`、`meta/` 放在 `output/` 下；程序会识别并继续工作，但 `doctor` 会给出 WARN，迁移方式见 [migration.md](migration.md)。
 
 ## 3. 初始化
 
@@ -171,7 +174,7 @@ eimmortal restore /tmp/eimmortal-restore --skip-missing-packs
 - 每个 pack 都有一个加密 manifest，记录它包含的切片和文件：
 
 ```bash
-eimmortal manifest output/data/2026-10/pack_1792342339377_vpal8n.dat
+eimmortal manifest data/2026-10/pack_1792342339377_vpal8n.dat
 eimmortal --json manifest pack_1792342339377_vpal8n
 ```
 

@@ -48,7 +48,7 @@ internal/codec/         zstd 压缩层
 internal/pathx/         路径归一化与安全校验
 internal/wire/          线格式：Slice Envelope、Pack、Journal
 internal/vault/         vault.meta、控制平面、锁
-internal/store/         TargetDir 布局（output/）、pack I/O、原子换入
+internal/store/         TargetDir 布局、pack I/O、原子换入
 internal/journal/       链校验、重放状态机
 internal/index/         state.db
 internal/pipeline/      backup / restore / compact / manifest 管线

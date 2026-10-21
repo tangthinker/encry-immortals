@@ -1,10 +1,10 @@
 # 迁移与升级
 
-本文覆盖三类迁移：TargetDir 新布局（`output/`）、旧名 `apex` 的兼容、以及跨版本升级时需要注意的点。
+本文覆盖三类迁移：TargetDir 布局（`output/` → 根目录）、旧名 `apex` 的兼容、以及跨版本升级时需要注意的点。
 
-## 1. 把旧布局迁到 output/
+## 1. 从 output/ 迁回根目录
 
-v0.1.3 起，新库使用：
+v0.1.3 / v0.1.4 曾使用：
 
 ```text
 <TargetDir>/
@@ -13,10 +13,21 @@ v0.1.3 起，新库使用：
   output/
     data/
     meta/
-      manifests/
 ```
 
-旧库的 `data/`、`meta/` 直接在 `<TargetDir>/` 下。程序会自动识别旧布局并继续工作，**不会自动搬**；要切换：
+当前布局回到根目录，暂存区移到 TargetDir 同级：
+
+```text
+<TargetDir>/
+  .eimmortal.lock
+  data/
+  meta/
+    manifests/
+
+<TargetDir>.tmp/        # 同级暂存区，不在同步目录内
+```
+
+程序会自动识别 `output/` 兼容布局，不会自动搬；`doctor` 会给出 WARN。迁移：
 
 ```bash
 # 1. 停掉所有 eimmortal 进程
@@ -26,8 +37,8 @@ pgrep -fl eimmortal
 
 # 3. 同卷重命名，瞬时完成
 cd /path/to/target
-mkdir output
-mv data meta output/
+mv output/data output/meta .
+rmdir output
 
 # 4. 验证
 eimmortal doctor
@@ -36,16 +47,17 @@ eimmortal doctor
 预期：
 
 ```text
-PASS TargetDir 白名单  只包含 .tmp/、.eimmortal.lock、output/（忽略 .DS_Store）
-PASS TargetDir 布局    output/data + output/meta
+PASS TargetDir 白名单  只包含 .eimmortal.lock、data/、meta/（旧 .tmp/ 允许；.DS_Store 忽略）
+PASS TargetDir 布局    data/meta 在 TargetDir 根目录；暂存区在同级 <TargetDir>.tmp
 ```
 
 说明：
 
-- `vault.meta`、`state.db`、锚点都不需要改；journal 内部路径是相对 `output/` 的 `data/...`、`meta/...`。
-- 只同步 `output/` 的客户端，请在迁移前就把同步根指向 `<TargetDir>/output`；同步整个根目录的客户端会看到一次"删除 data/meta + 新增 output/data/meta"的大变更。
-- 迁移前不要创建空的 `output/` 后继续备份：旧布局检测到根目录 `data/meta` 时仍按旧布局工作，此时根目录多出的 `output/` 会被当成污染。
-- 迁移后旧 pack 没有 manifest；新备份和 `compact` 会生成。`restore --list-packs` / `--skip-missing-packs` 仍从 journal 计算，不受影响。
+- `vault.meta`、`state.db`、锚点都不需要改；journal 内部路径就是 `data/...`、`meta/...`。
+- 旧版本可能在 TargetDir 里留下 `.tmp/`；确认没有进程后可以手工删除。新版本使用同级 `<TargetDir>.tmp`，会在下一次 backup 时创建。
+- 如果根目录和 `output/` 同时存在 data/meta，程序优先使用根目录，`output/` 会被白名单拒绝；迁移时不要只搬一半。
+- 如果网盘客户端之前同步的是 `<TargetDir>/output`，迁移后把同步根改回 `<TargetDir>`（或让客户端重新映射）。同步整个根目录的客户端会看到一次目录改名/移动；如果同步的是父目录，记得排除同级 `<TargetDir>.tmp`。
+- 只迁移数据目录，不需要重新 `init`。
 
 ## 2. apex → eimmortal 旧名兼容
 
@@ -70,7 +82,7 @@ PASS TargetDir 布局    output/data + output/meta
 
 ### v0.1.3 / v0.1.4
 
-- 新库使用 `output/`；旧布局仍可读。
+- 新库使用 `output/`；当前源码/下一次发布已改回根目录。
 - 每个 pack 生成加密 manifest；旧 pack 没有。
 - 新增 `restore --list-packs`、`restore --skip-missing-packs`、`manifest <pack>`。
 - `restore` / `backup` 增加进度和吞吐输出（stderr）。
@@ -81,7 +93,7 @@ PASS TargetDir 布局    output/data + output/meta
 - 升级前先确认 `eimmortal version`；控制平面和密文格式向后兼容，但**不要用旧版本写新库**。
 - 换机器不要复制 `state.db`；它只是缓存，用 `eimmortal rebuild-state` 从 journal 重建。
 - 跨机恢复前先 `eimmortal verify --size`，或用渐进恢复。
-- 如果新版启动后 `doctor` 报布局/白名单错误，先确认是不是只迁移了一半（例如只有 `output/data`，没有 `output/meta`）。
+- 如果新版启动后 `doctor` 报布局/白名单错误，先确认是不是只迁移了一半（例如只有根目录 `data`，没有 `meta`，或 `output/` 还残留）。
 
 ## 4. 升级检查清单
 
@@ -95,6 +107,7 @@ eimmortal verify --sample 8
 确认：
 
 - 控制平面仍在 `~/.eimmortal/eimmortal-vault`（或旧路径自动回退）
-- `TargetDir` 布局是 `output/` 或可识别的旧布局
+- `TargetDir` 布局是根目录（或可识别的 `output/` 兼容布局）
+- 暂存区是同级 `<TargetDir>.tmp`，且与 TargetDir 同卷
 - 锚点 `Anchor` 与 `Last commit` 一致
 - 没有缺失/孤儿 pack（`status --chain` / `doctor --chain`）

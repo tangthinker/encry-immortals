@@ -22,10 +22,11 @@
 ## 工作原理
 
 ```text
-源目录 ──scan/hash──► eimmortal backup ──encrypt──► <TargetDir>/output/
+源目录 ──scan/hash──► eimmortal backup ──encrypt──► <TargetDir>/
                                                        data/YYYY-MM/pack_*.dat
                                                        meta/00000001.journal
                                                        meta/manifests/*.manifest
+                                                       .eimmortal.lock
                                                               │
                                                               │ 网盘同步（只看得到密文）
                                                               ▼
@@ -78,7 +79,7 @@ target_dir = "/Users/me/QuarkDrive/eimmortal"
 
 - 配置项逐行说明见 [config.example.toml](config.example.toml)。
 - macOS 请保留 `scan.ignore_xattr = true`，否则 `com.apple.provenance` 一类属性会让 backup 直接报 E21。
-- 如果网盘客户端同步整个 TargetDir，请排除 `.tmp/` 和 `.eimmortal.lock`，或把同步范围指向 `<TargetDir>/output`。
+- 暂存区在 TargetDir 同级的 `<TargetDir>.tmp`；如果客户端同步的是 TargetDir，它不会被带进去；如果同步的是父目录，请排除它，或用 `storage.staging_dir` 指到同卷、同步范围外的路径。lock 只在写入期间出现在 TargetDir 根目录。
 
 ### 3. 初始化
 
@@ -140,7 +141,7 @@ eimmortal restore /tmp/eimmortal-restore --skip-missing-packs
 每个 pack 的加密记录可以单独查看：
 
 ```bash
-eimmortal manifest output/data/2026-10/pack_1789..._abc123.dat
+eimmortal manifest data/2026-10/pack_1789..._abc123.dat
 ```
 
 ## 常用命令
@@ -193,7 +194,7 @@ eimmortal manifest output/data/2026-10/pack_1789..._abc123.dat
 | [docs/usage.md](docs/usage.md) | 安装、配置、命令、退出码、非交互、渐进恢复 |
 | [docs/operations.md](docs/operations.md) | 定时备份、云端同步、校验节奏、灾备、容量/压缩/性能 |
 | [docs/security.md](docs/security.md) | 威胁模型、密钥管理、已知限制 |
-| [docs/migration.md](docs/migration.md) | 旧布局迁到 `output/`、apex 旧名兼容、升级检查 |
+| [docs/migration.md](docs/migration.md) | 旧 `output/` 布局迁回根目录、apex 旧名兼容、升级检查 |
 | [docs/development.md](docs/development.md) | 构建、测试、CI、发布、贡献 |
 | [config.example.toml](config.example.toml) | 所有配置项和默认值 |
 | [docs/spec/](docs/spec/README.md) | 字节级格式、协议、崩溃恢复、验收标准 |
